@@ -1,0 +1,30 @@
+.{
+    .name = .xoby,
+    .fingerprint = 0xb2561bcfedb5a4e6,
+
+    .version = "0.0.0",
+
+    .minimum_zig_version = "0.15.2",
+
+    // update the dependencies with whatever version you want
+    .dependencies = .{
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig?ref=master#1c0ec3751c53e276d5e0c42b6d5481e72d9d1971",
+            .hash = "httpz-0.0.0-PNVzrEktBwCzPoiua-S8LAYo2tILqczm3tSpneEzLQ9L",
+        },
+        .zdt = .{
+            .url = "git+https://codeberg.org/FObersteiner/zdt#6ca732a03578a13e1955e0d34747c365e381f45c",
+            .hash = "zdt-0.8.1-xr0_vAxUDwCJRDh9pcAS_mdZBIsvcGTtN-K8JJSWY4I6",
+        },
+        .pg = .{
+            .url = "git+https://github.com/karlseguin/pg.zig#f8d4892387fbad2abdf775783e101e50a7114335",
+            .hash = "pg-0.0.0-Wp_7gag6BgD_QAZrPhNNEGpnUZR_LEkKT40Ura3p-4yX",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

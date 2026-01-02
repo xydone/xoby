@@ -1,0 +1,9 @@
+// WARNING: by default this file is NOT gitignored, as to allow for it to be self-documenting via comments.
+// Be careful when including secrets as to make sure they don't end up on the git repository.
+.{
+    // The port the http server will be hosted on.
+    .port = 6733,
+
+    // The address the http server will be hosted on.
+    .address = "127.0.0.1",
+}

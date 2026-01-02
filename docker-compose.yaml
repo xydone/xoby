@@ -1,0 +1,58 @@
+services:
+  prod_postgres:
+    profiles: [prod]
+    image: postgres:16.1
+    container_name: xoby_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+      PGPORT: ${DATABASE_PORT}
+      LANG: "en_US.utf8"
+    ports:
+      # - "5432:5432"
+      - "${DATABASE_PORT}:${DATABASE_PORT}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # - ./docker-scripts/postgres:/docker-entrypoint-initdb.d
+      # - ./docker-scripts/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      # - "-c"
+      # - "config_file=/etc/postgresql/postgresql.conf"
+
+  test_postgres:
+    profiles: [test]
+    image: postgres:16.1
+    container_name: testing_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: TEST_${DATABASE_NAME}
+      LANG: "en_US.utf8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - test_pgdata:/var/lib/postgresql/data
+      # - ./docker-scripts/postgres:/docker-entrypoint-initdb.d
+      # - ./docker-scripts/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      # - "-c"
+      # - "config_file=/etc/postgresql/postgresql.conf"
+
+volumes:
+  pgdata:
+  test_pgdata:

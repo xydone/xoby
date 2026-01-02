@@ -1,0 +1,4 @@
+.zig-*
+zig-*
+.env
+.testing.env
