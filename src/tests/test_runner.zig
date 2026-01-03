@@ -148,8 +148,8 @@ pub fn main() !void {
     defer teardown_queue.deinit(allocator);
     const endpoint_queue = TestList.init(allocator, .@"test");
     defer endpoint_queue.deinit(allocator);
-    const api_queue = TestList.init(allocator, .@"test");
-    defer api_queue.deinit(allocator);
+    const model_queue = TestList.init(allocator, .@"test");
+    defer model_queue.deinit(allocator);
 
     for (builtin.test_functions) |t| {
         const name = makeNameFriendly(t.name);
@@ -157,8 +157,8 @@ pub fn main() !void {
             try endpoint_queue.test_functions.append(allocator, t);
             continue;
         }
-        if (isAPI(name)) {
-            try api_queue.test_functions.append(allocator, t);
+        if (isModel(name)) {
+            try model_queue.test_functions.append(allocator, t);
             continue;
         }
         if (isSetup(name)) {
@@ -179,10 +179,10 @@ pub fn main() !void {
 
     // Order is:
     // 1. Setup
-    // 2. API
+    // 2. Models
     // 3. Endpoint
     // 4. Teardown
-    const test_run_order = [_]TestList{ setup_queue, api_queue, endpoint_queue, teardown_queue, base_queue };
+    const test_run_order = [_]TestList{ setup_queue, model_queue, endpoint_queue, teardown_queue, base_queue };
     for (test_run_order) |list| outer: {
         for (list.test_functions.items) |t| {
             if (is_fail_first_triggered or is_fail_leak_triggered) break :outer;
@@ -262,16 +262,17 @@ fn isTeardown(test_name: []const u8) bool {
 fn isNotTimed(test_name: []const u8) bool {
     return std.mem.endsWith(u8, test_name, "tests:noTime");
 }
-fn isAPI(test_name: []const u8) bool {
-    return std.mem.startsWith(u8, test_name, "API");
+
+fn isModel(test_name: []const u8) bool {
+    return std.mem.startsWith(u8, test_name, "Model |");
 }
 
 fn isEndpoint(test_name: []const u8) bool {
-    return std.mem.startsWith(u8, test_name, "Endpoint");
+    return std.mem.startsWith(u8, test_name, "Endpoint |");
 }
 
 fn isBase(test_name: []const u8) bool {
-    return std.mem.startsWith(u8, test_name, "Base ");
+    return std.mem.startsWith(u8, test_name, "Base |");
 }
 
 pub const Printer = struct {

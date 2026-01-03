@@ -1,4 +1,5 @@
 database_pool: *Database.Pool,
+redis_client: *redis.Client,
 config: Config,
 /// Handler is initalized with data, available at handler instantiation, at the main entry point of the program.
 const Handler = @This();
@@ -18,6 +19,7 @@ pub const RouteData = struct {
 pub const RequestContext = struct {
     user_id: ?i64,
     database_pool: *Database.Pool,
+    redis_client: *redis.Client,
     config: Config,
 };
 
@@ -28,6 +30,7 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
     var ctx = RequestContext{
         .user_id = null,
         .database_pool = self.database_pool,
+        .redis_client = self.redis_client,
         .config = self.config,
     };
 
@@ -166,6 +169,7 @@ pub fn handleResponse(httpz_res: *httpz.Response, response_error: ResponseError,
     return;
 }
 
+const redis = @import("redis.zig");
 const Database = @import("database.zig");
 const Config = @import("config/config.zig");
 

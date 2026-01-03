@@ -1,6 +1,12 @@
 pub inline fn init(router: *Handler.Router) void {
-    _ = router;
+    Auth.init(router);
+    Content.init(router);
+    Profile.init(router);
 }
+
+const Auth = @import("auth/routes.zig");
+const Content = @import("content/routes.zig");
+const Profile = @import("profile/routes.zig");
 
 const Handler = @import("../../handler.zig");
 const httpz = @import("httpz");

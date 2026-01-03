@@ -2,11 +2,16 @@ port: u16,
 address: []u8,
 database: struct {
     port: u16,
-    host: []u8,
-    username: []u8,
-    name: []u8,
-    password: []u8,
+    host: []const u8,
+    username: []const u8,
+    name: []const u8,
+    password: []const u8,
 },
+redis: struct {
+    address: []const u8,
+    port: u16,
+},
+jwt_secret: []u8,
 
 const path = "config/config.zon";
 const log = std.log.scoped(.config);
@@ -18,11 +23,13 @@ const Config = @This();
 const ConfigFile = struct {
     port: u16,
     address: []const u8,
+    jwt_secret: ?[]const u8,
 };
 
 pub const InitErrors = error{
     CouldntReadFile,
     CouldntReadEnv,
+    MissingJWTSecret,
 };
 
 pub fn init(allocator: Allocator) InitErrors!Config {
@@ -47,6 +54,16 @@ pub fn init(allocator: Allocator) InitErrors!Config {
             .username = env.DATABASE_USERNAME,
             .name = env.DATABASE_NAME,
             .password = env.DATABASE_PASSWORD,
+        },
+        .redis = .{
+            .port = env.REDIS_PORT,
+            .address = env.REDIS_ADDRESS,
+        },
+        .jwt_secret = blk: {
+            if (config_file.jwt_secret) |jwt_secret| break :blk allocator.dupe(u8, jwt_secret) catch @panic("OOM");
+            // if this code is reached, jwt_secret was null, thus probably not changed from the default
+            log.err("\"jwt_secret\" inside config.zon is null. Please set it to a correct value.", .{});
+            return error.MissingJWTSecret;
         },
     };
 }

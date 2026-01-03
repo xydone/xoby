@@ -1,8 +1,11 @@
-DATABASE_HOST: []u8,
-DATABASE_USERNAME: []u8,
-DATABASE_NAME: []u8,
-DATABASE_PASSWORD: []u8,
+DATABASE_HOST: []const u8,
+DATABASE_USERNAME: []const u8,
+DATABASE_NAME: []const u8,
+DATABASE_PASSWORD: []const u8,
 DATABASE_PORT: u16,
+
+REDIS_ADDRESS: []const u8,
+REDIS_PORT: u16,
 
 const log = std.log.scoped(.env);
 const Env = @This();
@@ -29,7 +32,7 @@ pub fn init(allocator: Allocator) !Env {
             if (type_info == .optional) break :blk type_info.optional.child else break :blk field.type;
         };
         switch (field_type) {
-            []const u8, []u8 => {
+            []const u8 => {
                 @field(env, field.name) = allocator.dupe(u8, result) catch return error.OutOfMemory;
             },
             u16, u32, u64 => |T| {

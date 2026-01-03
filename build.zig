@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const NAME = "http_template";
+const NAME = "xoby";
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -37,6 +37,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     module.addImport("pg", pg.module("pg"));
+
+    const jwt = b.dependency("jwt", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("jwt", jwt.module("jwt"));
 
     const exe = b.addExecutable(.{
         .name = NAME,

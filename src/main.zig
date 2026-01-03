@@ -19,9 +19,13 @@ pub fn main() !void {
     var database = try Database.init(allocator, config);
     defer database.deinit();
 
+    var redis_client = try redis.Client.init(allocator, config.redis.address, config.redis.port);
+    defer redis_client.deinit();
+
     var handler = Handler{
         .database_pool = database,
         .config = config,
+        .redis_client = &redis_client,
     };
 
     var server = try httpz.Server(*Handler).init(allocator, .{
@@ -44,6 +48,8 @@ pub fn main() !void {
 test "tests:beforeAll" {
     // Things that should be initialized before all tests are ran.
     // Usually things like database interfaces.
+    const allocator = std.heap.smp_allocator;
+    try Tests.TestEnvironment.init(allocator);
 
     // Eventually will be removed from stdlib, but for now, we make due with what we have.
     std.testing.refAllDecls(@This());
@@ -53,10 +59,16 @@ test "tests:beforeAll" {
 test "tests:afterAll" {
     // Things that should be called after all tests are done.
     // Usually done to deinitialize things from the beforeAll call.
+
+    const allocator = std.heap.smp_allocator;
+    Tests.test_env.deinit(allocator);
 }
+
+const Tests = @import("tests/setup.zig");
 
 const API = @import("routes/routes.zig");
 
+const redis = @import("redis.zig");
 const Database = @import("database.zig");
 const Config = @import("config/config.zig");
 

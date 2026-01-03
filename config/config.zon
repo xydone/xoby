@@ -6,4 +6,8 @@
 
     // The address the http server will be hosted on.
     .address = "127.0.0.1",
+
+    // The secret that will be used to authenticate JWTs.
+    // NOTE: this has to be changed in order to run.
+    .jwt_secret = "abcd",
 }

@@ -11,12 +11,9 @@ services:
       PGPORT: ${DATABASE_PORT}
       LANG: "en_US.utf8"
     ports:
-      # - "5432:5432"
       - "${DATABASE_PORT}:${DATABASE_PORT}"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # - ./docker-scripts/postgres:/docker-entrypoint-initdb.d
-      # - ./docker-scripts/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 10s
@@ -24,25 +21,23 @@ services:
       retries: 5
     command:
       - "postgres"
-      # - "-c"
-      # - "config_file=/etc/postgresql/postgresql.conf"
 
   test_postgres:
     profiles: [test]
     image: postgres:16.1
-    container_name: testing_db
+    container_name: xoby_testing_db
     restart: always
+    env_file: ".testing.env"
     environment:
       POSTGRES_USER: ${DATABASE_USERNAME}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-      POSTGRES_DB: TEST_${DATABASE_NAME}
+      POSTGRES_DB: ${DATABASE_NAME}
+      PGPORT: ${DATABASE_PORT}
       LANG: "en_US.utf8"
     ports:
-      - "5432:5432"
+      - "${DATABASE_PORT}:${DATABASE_PORT}"
     volumes:
       - test_pgdata:/var/lib/postgresql/data
-      # - ./docker-scripts/postgres:/docker-entrypoint-initdb.d
-      # - ./docker-scripts/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 10s
@@ -50,9 +45,30 @@ services:
       retries: 5
     command:
       - "postgres"
-      # - "-c"
-      # - "config_file=/etc/postgresql/postgresql.conf"
+
+  redis:
+    profiles: [prod]
+    image: redis:latest
+    container_name: xoby_redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
+    volumes:
+      - redis_data:/data
+
+  test_redis:
+    profiles: [test]
+    image: redis:latest
+    container_name: test_xoby_redis
+    restart: always
+    env_file: ".testing.env"
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
+    volumes:
+      - test_redis_data:/data
 
 volumes:
   pgdata:
   test_pgdata:
+  redis_data:
+  test_redis_data:

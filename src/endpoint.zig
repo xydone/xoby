@@ -18,7 +18,6 @@ pub const EndpointData = struct {
     path: []const u8,
     method: httpz.Method,
     route_data: RouteData,
-    config: RouteData = .{},
 };
 
 pub fn Endpoint(
@@ -172,7 +171,7 @@ pub fn Endpoint(
     };
 }
 
-test "Base Endpoint | Request body" {
+test "Base | Endpoint | Request body" {
     const TestSetup = @import("tests/setup.zig");
     const jsonStringify = @import("util/jsonStringify.zig").jsonStringify;
     const ht = @import("httpz").testing;
@@ -213,7 +212,7 @@ test "Base Endpoint | Request body" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, 1);
 
     {
         var web_test = ht.init(.{});
@@ -224,7 +223,7 @@ test "Base Endpoint | Request body" {
     }
 }
 
-test "Base Endpoint | Request params" {
+test "Base | Endpoint | Request params" {
     const TestSetup = @import("tests/setup.zig");
     const ht = @import("httpz").testing;
     const allocator = std.testing.allocator;
@@ -261,7 +260,7 @@ test "Base Endpoint | Request params" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, 1);
 
     var value_list = std.ArrayList(struct { name: []const u8, value: []u8 }).empty;
     defer {
@@ -290,7 +289,7 @@ test "Base Endpoint | Request params" {
     }
 }
 
-test "Base Endpoint | Request query" {
+test "Base | Endpoint | Request query" {
     const TestSetup = @import("tests/setup.zig");
     const ht = @import("httpz").testing;
     const allocator = std.testing.allocator;
@@ -327,7 +326,7 @@ test "Base Endpoint | Request query" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, 1);
 
     var value_list = std.ArrayList(struct { name: []const u8, value: []u8 }).empty;
     defer {
@@ -362,7 +361,7 @@ const Handler = @import("handler.zig");
 const RouteData = Handler.RouteData;
 const Router = Handler.Router;
 
-const handleResponse = @import("handler.zig").handleResponse;
+pub const handleResponse = @import("handler.zig").handleResponse;
 const ResponseError = @import("handler.zig").ResponseError;
 
 const httpz = @import("httpz");

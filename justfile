@@ -1,20 +1,50 @@
-set dotenv-load := true
+set dotenv-load := false
 
-DB_CONN := "user=" + env("DATABASE_USERNAME") + " dbname=" + env("DATABASE_NAME") + " host=" + env("DATABASE_HOST") + " port=" + env("DATABASE_PORT") + " password=" + env("DATABASE_PASSWORD") + " sslmode=disable"
 MIGRATIONS_DIR := "migrations"
 
-# goose up
-up:
-    goose -dir {{ MIGRATIONS_DIR }} postgres "{{ DB_CONN }}" up
+# database migrations
+migrate-up:
+    @just _migrate up .env
 
-# goose down
-down:
-    goose -dir {{ MIGRATIONS_DIR }} postgres "{{ DB_CONN }}" down
-
-# goose status
-status:
-    goose -dir {{ MIGRATIONS_DIR }} postgres "{{ DB_CONN }}" status
-
-# goose create
-create name:
+migrate-create name:
     goose -dir {{ MIGRATIONS_DIR }} create {{ name }} sql
+
+migrate-down:
+    @just _migrate down .env
+
+migrate-status:
+    @just _migrate status .env
+
+migrate-test-up:
+    @just _migrate up .testing.env
+
+migrate-test-down:
+    @just _migrate down .testing.env
+
+migrate-test-status:
+    @just _migrate status .testing.env
+
+_migrate command env_file:
+    @set -a && [ -f {{ env_file }} ] && . ./{{ env_file }} && set +a && \
+    goose -dir {{ MIGRATIONS_DIR }} postgres \
+    "user=$DATABASE_USERNAME dbname=$DATABASE_NAME host=$DATABASE_HOST port=$DATABASE_PORT password=$DATABASE_PASSWORD sslmode=disable" \
+    {{ command }}
+
+# container management
+container-start:
+    podman compose --profile prod start
+
+container-stop:
+    podman compose --profile prod stop
+
+container-up:
+    podman compose --profile prod up -d
+
+container-down:
+    podman compose --profile prod down -v
+
+container-test-up:
+    podman compose --env-file .testing.env --profile test up -d
+
+container-test-down:
+    podman compose --profile test down -v

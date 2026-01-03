@@ -20,6 +20,10 @@
             .url = "git+https://github.com/karlseguin/pg.zig#f8d4892387fbad2abdf775783e101e50a7114335",
             .hash = "pg-0.0.0-Wp_7gag6BgD_QAZrPhNNEGpnUZR_LEkKT40Ura3p-4yX",
         },
+        .jwt = .{
+            .url = "git+https://github.com/Gnyblast/zig-jwt#a142d6ca872e765cf2e062128656acbfa92dfbac",
+            .hash = "jwt-0.1.0-NpgsfuymAAApYfFmGeu9oEto38u33YL-XNwAFMwDf0ua",
+        },
     },
 
     .paths = .{
