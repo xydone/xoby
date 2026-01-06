@@ -3,7 +3,7 @@ pub fn main() !void {
     const endpoint_data = .{
         Auth.endpoint_data,
         Books.endpoint_data,
-            // Movies.endpoint_data,
+        Movies.endpoint_data,
             // Media.endpoint_data,
             // Profiles.endpoint_data,
     };
