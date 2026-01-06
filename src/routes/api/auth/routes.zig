@@ -1,11 +1,14 @@
 const log = std.log.scoped(.auth_route);
 
-pub inline fn init(router: *Handler.Router) void {
-    Register.init(router);
-    Login.init(router);
-    CreateAPIKey.init(router);
-    Refresh.init(router);
-}
+const Endpoints = EndpointGroup(.{
+    Register,
+    Login,
+    CreateAPIKey,
+    Refresh,
+});
+
+pub const endpoint_data = Endpoints.endpoint_data;
+pub const init = Endpoints.init;
 
 const Register = Endpoint(struct {
     const Body = struct {
@@ -194,6 +197,7 @@ const AuthModel = @import("../../../models/models.zig").Auth;
 const Endpoint = @import("../../../endpoint.zig").Endpoint;
 const EndpointRequest = @import("../../../endpoint.zig").EndpointRequest;
 const EndpointData = @import("../../../endpoint.zig").EndpointData;
+const EndpointGroup = @import("../../../endpoint.zig").EndpointGroup;
 const handleResponse = @import("../../../endpoint.zig").handleResponse;
 
 const Handler = @import("../../../handler.zig");

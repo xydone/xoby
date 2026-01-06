@@ -20,6 +20,24 @@ pub const EndpointData = struct {
     route_data: RouteData,
 };
 
+pub fn EndpointGroup(comptime endpoints: anytype) type {
+    return struct {
+        pub const endpoint_data = fill: {
+            var data: [endpoints.len]EndpointData = undefined;
+            for (endpoints, 0..) |E, i| {
+                data[i] = E.endpoint_data;
+            }
+            break :fill data;
+        };
+
+        pub fn init(router: *Router) void {
+            inline for (endpoints) |E| {
+                E.init(router);
+            }
+        }
+    };
+}
+
 pub fn Endpoint(
     comptime T: type,
 ) type {

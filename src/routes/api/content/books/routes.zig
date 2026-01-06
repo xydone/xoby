@@ -1,8 +1,11 @@
 const log = std.log.scoped(.book_route);
 
-pub inline fn init(router: *Handler.Router) void {
-    Create.init(router);
-}
+const Endpoints = EndpointGroup(.{
+    Create,
+});
+
+pub const endpoint_data = Endpoints.endpoint_data;
+pub const init = Endpoints.init;
 
 const Create = Endpoint(struct {
     const Body = struct {
@@ -63,6 +66,7 @@ const BookModel = @import("../../../../models/content/content.zig").Books;
 const Endpoint = @import("../../../../endpoint.zig").Endpoint;
 const EndpointRequest = @import("../../../../endpoint.zig").EndpointRequest;
 const EndpointData = @import("../../../../endpoint.zig").EndpointData;
+const EndpointGroup = @import("../../../../endpoint.zig").EndpointGroup;
 const handleResponse = @import("../../../../endpoint.zig").handleResponse;
 
 const Handler = @import("../../../../handler.zig");

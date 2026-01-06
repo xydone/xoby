@@ -31,18 +31,21 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     module.addImport("zdt", zdt.module("zdt"));
+    openapi_module.addImport("zdt", zdt.module("zdt"));
 
     const pg = b.dependency("pg", .{
         .target = target,
         .optimize = optimize,
     });
     module.addImport("pg", pg.module("pg"));
+    openapi_module.addImport("pg", pg.module("pg"));
 
     const jwt = b.dependency("jwt", .{
         .target = target,
         .optimize = optimize,
     });
     module.addImport("jwt", jwt.module("jwt"));
+    openapi_module.addImport("jwt", jwt.module("jwt"));
 
     const exe = b.addExecutable(.{
         .name = NAME,
@@ -51,7 +54,7 @@ pub fn build(b: *std.Build) void {
 
     const openapi_exe = b.addExecutable(.{
         .name = NAME ++ "_openapi",
-        .root_module = module,
+        .root_module = openapi_module,
     });
 
     const run_openapi = b.addRunArtifact(openapi_exe);

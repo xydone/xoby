@@ -1,5 +1,12 @@
 pub fn main() !void {
-    const endpoint_data = .{};
+    // WARNING: this needs to be manually changed if new routes are added
+    const endpoint_data = .{
+        Auth.endpoint_data,
+        Books.endpoint_data,
+            // Movies.endpoint_data,
+            // Media.endpoint_data,
+            // Profiles.endpoint_data,
+    };
 
     const allocator = std.heap.smp_allocator;
     var path_map = std.StringHashMap(Path).init(allocator);
@@ -222,7 +229,11 @@ fn setOperation(method: Method, value_ptr: *Path, operation: Path.Operation) voi
     }
 }
 
-const std = @import("std");
+const Auth = @import("routes/api/auth/routes.zig");
+const Books = @import("routes/api/content/books/routes.zig");
+const Movies = @import("routes/api/content/movies/routes.zig");
+const Media = @import("routes/api/content/media/routes.zig");
+const Profiles = @import("routes/api/profile/routes.zig");
 
 const Method = @import("httpz").Method;
 
@@ -231,17 +242,4 @@ const Schema = @import("openapi/schema.zig");
 const Response = @import("openapi/response.zig");
 const OpenAPI = @import("openapi/openapi.zig");
 
-const Auth = @import("routes/auth.zig");
-const Entry = @import("routes/entry.zig");
-const Food = @import("routes/food.zig");
-const User = @import("routes/user.zig");
-const Note = @import("routes/note.zig");
-const Workout = @import("routes/workout.zig");
-const ExerciseRoutes = @import("routes/exercise/routes.zig");
-const Weight = @import("routes/analytics/weight.zig");
-const Exercise = @import("routes/exercise/exercise.zig");
-const ExerciseUnit = @import("routes/exercise/unit.zig");
-const ExerciseEntry = @import("routes/exercise/entry.zig");
-const ExerciseCategory = @import("routes/exercise/category.zig");
-const Measurement = @import("routes/measurement.zig");
-const Goals = @import("routes/goals.zig");
+const std = @import("std");
