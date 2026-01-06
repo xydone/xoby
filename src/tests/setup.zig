@@ -107,6 +107,7 @@ pub const RequestContext = struct {
     pub fn init(config: Config, user_id: ?i64) !Handler.RequestContext {
         return Handler.RequestContext{
             .user_id = user_id,
+            .refresh_token = null,
             .database_pool = test_env.database_pool,
             .redis_client = test_env.redis_client,
             .config = config,

@@ -102,6 +102,7 @@ pub const CreateToken = struct {
 
     pub const Errors = error{
         CannotCreate,
+        UserNotFound,
         RedisError,
         OutOfMemory,
     } || DatabaseErrors;
@@ -120,7 +121,7 @@ pub const CreateToken = struct {
             }
 
             return error.CannotCreate;
-        } orelse return error.CannotCreate;
+        } orelse return error.UserNotFound;
         defer row.deinit() catch {};
         const user_id = row.get(i32, 0);
         const hash = row.get([]u8, 1);
@@ -149,12 +150,6 @@ pub const CreateToken = struct {
 };
 
 pub const RefreshToken = struct {
-    pub const Props = struct {
-        allocator: std.mem.Allocator,
-        redis_client: *redis.Client,
-        refresh_token: []const u8,
-        jwt_secret: []const u8,
-    };
     pub const Response = struct {
         access_token: []const u8,
         refresh_token: []const u8,
@@ -166,20 +161,20 @@ pub const RefreshToken = struct {
     };
 
     pub const Errors = error{ CannotCreateJWT, UserNotFound, RedisError, ParseError };
-    pub fn call(props: Props) Errors!Response {
-        const result = props.redis_client.get(props.allocator, props.refresh_token) catch |err| switch (err) {
+    pub fn call(allocator: std.mem.Allocator, redis_client: *redis.Client, refresh_token: []const u8, jwt_secret: []const u8) Errors!Response {
+        const result = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
             error.KeyValuePairNotFound => return error.UserNotFound,
             else => return error.RedisError,
         };
-        defer props.allocator.free(result);
+        defer allocator.free(result);
         const number = std.fmt.parseInt(i32, result, 10) catch return error.ParseError;
         const claims = JWTClaims{ .user_id = number, .exp = generateAccessTokenExpiry() };
 
-        const access_token = createJWT(props.allocator, claims, props.jwt_secret) catch return error.CannotCreateJWT;
+        const access_token = createJWT(allocator, claims, jwt_secret) catch return error.CannotCreateJWT;
 
         return Response{
             .access_token = access_token,
-            .refresh_token = props.refresh_token,
+            .refresh_token = refresh_token,
             .expires_in = ACCESS_TOKEN_EXPIRY,
         };
     }
@@ -210,7 +205,7 @@ pub const CreateAPIKey = struct {
     };
 
     pub const Errors = error{ CannotCreate, UserNotFound } || DatabaseErrors;
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, user_id: i32) Errors!Response {
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, user_id: i64) Errors!Response {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
@@ -463,16 +458,10 @@ test "Model | Auth | Refresh" {
 
     // TEST
     {
-        const refresh_props = RefreshToken.Props{
-            .allocator = allocator,
-            .jwt_secret = jwt_secret,
-            .redis_client = test_env.redis_client,
-            // duping here as the response.deinit() frees
-            .refresh_token = try allocator.dupe(u8, refresh_token),
-        };
-        defer allocator.free(refresh_props.refresh_token);
+        const refresh = try allocator.dupe(u8, refresh_token);
+        defer allocator.free(refresh);
 
-        const refresh_response = try RefreshToken.call(refresh_props);
+        const refresh_response = try RefreshToken.call(allocator, test_env.redis_client, refresh, jwt_secret);
         defer refresh_response.deinit(allocator);
 
         try std.testing.expectEqualStrings(refresh_response.refresh_token, refresh_token);

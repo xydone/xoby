@@ -12,12 +12,15 @@ pub const Router = httpz.Router(*Handler, *const fn (*Handler.RequestContext, *h
 pub const RouteData = struct {
     /// Requires authentication.
     restricted: bool = false,
+    /// Requires a refresh token.
+    refresh: bool = false,
 };
 
 /// This will be passed to every request, should include things that would be needed inside a request but cannot/shouldn't be initialized every time.
 /// The difference between RequestContext and Handler is that the RequestContext can contain information that is provided by the dispatch function and middleware.
 pub const RequestContext = struct {
     user_id: ?i64,
+    refresh_token: ?[]const u8,
     database_pool: *Database.Pool,
     redis_client: *redis.Client,
     config: Config,
@@ -29,6 +32,7 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
 
     var ctx = RequestContext{
         .user_id = null,
+        .refresh_token = null,
         .database_pool = self.database_pool,
         .redis_client = self.redis_client,
         .config = self.config,
@@ -56,7 +60,6 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
 }
 
 fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.Request, res: *httpz.Response) !void {
-    const api_key = req.header("x-api-key");
 
     // Should be used for all failure states in this function, as to minimize information leakage.
     const handleRejection = struct {
@@ -68,21 +71,71 @@ fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.R
 
     if (req.route_data) |rd| {
         const route_data: *const RouteData = @ptrCast(@alignCast(rd));
+
+        const api_key = req.header("x-api-key");
+        const access_token = req.header("authorization");
+
         if (route_data.restricted) {
             if (api_key) |key| {
-                verifyAPIKey(allocator, ctx, key) catch {
+                verifyAPIKey(ctx, key) catch {
+                    try handleRejection(res);
+                };
+            } else if (access_token) |token| {
+                verifyJWT(allocator, ctx, token) catch {
                     try handleRejection(res);
                 };
             } else try handleRejection(res);
         }
+        if (route_data.refresh) {
+            verifyRefresh(allocator, ctx, req) catch {
+                try handleRejection(res);
+            };
+        }
     }
 }
 
-// NOTE: implementation defined
-fn verifyAPIKey(allocator: Allocator, ctx: *RequestContext, api_key: []const u8) !void {
-    _ = allocator;
-    _ = api_key;
-    ctx.user_id = null;
+fn verifyJWT(allocator: std.mem.Allocator, ctx: *RequestContext, access_token: []const u8) error{ InvalidJWT, InvalidToken }!void {
+    const JWTClaims = @import("auth/tokens.zig").JWTClaims;
+
+    const prefix = "Bearer ";
+    if (access_token.len == 0 or !std.mem.startsWith(u8, access_token, prefix)) {
+        return error.InvalidToken;
+    }
+    const token = access_token[prefix.len..];
+    var decoded = jwt.decode(
+        allocator,
+        JWTClaims,
+        token,
+        .{ .secret = ctx.config.jwt_secret },
+        //NOTE: there is a leeway by default in the validation struct
+        .{},
+    ) catch {
+        return error.InvalidJWT;
+    };
+    defer decoded.deinit();
+
+    ctx.user_id = decoded.claims.user_id;
+}
+
+fn verifyAPIKey(ctx: *RequestContext, api_key: []const u8) error{CannotGet}!void {
+    const GetUserByAPIKey = @import("models/auth/auth.zig").GetUserByAPIKey;
+    const id = GetUserByAPIKey.call(ctx.database_pool, api_key) catch return error.CannotGet;
+    ctx.user_id = id;
+}
+
+fn verifyRefresh(allocator: Allocator, ctx: *RequestContext, req: *httpz.Request) error{ MissingBody, InvalidBodyJSON }!void {
+    const body = req.body() orelse {
+        return error.MissingBody;
+    };
+
+    const RefreshToken = struct {
+        refresh_token: []const u8,
+    };
+
+    const json = std.json.parseFromSliceLeaky(RefreshToken, allocator, body, .{}) catch {
+        return error.InvalidBodyJSON;
+    };
+    ctx.refresh_token = json.refresh_token;
 }
 
 const Logging = struct {
@@ -173,6 +226,7 @@ const redis = @import("redis.zig");
 const Database = @import("database.zig");
 const Config = @import("config/config.zig");
 
+const jwt = @import("jwt");
 const zdt = @import("zdt");
 const httpz = @import("httpz");
 
