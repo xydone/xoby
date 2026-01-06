@@ -3,9 +3,7 @@ pub const Create = struct {
         title: []const u8,
         user_id: i64,
         release_date: ?[]const u8,
-        director: []const u8,
-        runtime_minutes: u64,
-        studio: []const u8,
+        runtime_minutes: ?u64,
     };
 
     pub const Response = struct {
@@ -32,9 +30,7 @@ pub const Create = struct {
             request.title,
             request.user_id,
             request.release_date,
-            request.director,
             request.runtime_minutes,
-            request.studio,
         }) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
@@ -63,8 +59,8 @@ pub const Create = struct {
         \\   VALUES ($1, $2, $3::date, 'movie')
         \\   RETURNING id, title
         \\ )
-        \\ INSERT INTO content.movies (media_id, director, runtime_minutes, studio)
-        \\ VALUES ((SELECT id FROM new_media), $4, $5, $6)
+        \\ INSERT INTO content.movies (media_id, runtime_minutes)
+        \\ VALUES ((SELECT id FROM new_media), $4)
         \\ RETURNING (SELECT id FROM new_media), (SELECT title FROM new_media);
     ;
 };

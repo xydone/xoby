@@ -39,17 +39,44 @@ created_at TIMESTAMPTZ DEFAULT now ()
 
 CREATE TABLE content.movies (
 media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
-director TEXT,
-runtime_minutes INTEGER,
-studio TEXT
+runtime_minutes INTEGER
 ) ;
 
 CREATE TABLE content.books (
 media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
-author TEXT NOT NULL,
-page_count INTEGER,
-publisher TEXT
+page_count INTEGER
 ) ;
+
+-- staff and organisations
+
+CREATE TABLE content.people (
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+full_name TEXT NOT NULL,
+bio TEXT,
+created_at TIMESTAMPTZ DEFAULT now ()
+) ;
+
+CREATE TABLE content.media_staff (
+media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+person_id uuid REFERENCES content.people (id) ON DELETE CASCADE,
+role_name TEXT NOT NULL,
+PRIMARY KEY (media_id, person_id, role_name)
+) ;
+
+
+CREATE TABLE content.organizations (
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+name TEXT NOT NULL,
+created_at TIMESTAMPTZ DEFAULT now ()
+) ;
+
+CREATE TABLE content.media_organizations (
+media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+organization_id uuid REFERENCES content.organizations (id) ON DELETE CASCADE,
+role_name TEXT NOT NULL,
+PRIMARY KEY (media_id, organization_id, role_name)
+) ;
+
 
 -- profiles
 CREATE SCHEMA profiles ;

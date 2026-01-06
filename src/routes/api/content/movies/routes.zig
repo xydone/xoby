@@ -10,11 +10,8 @@ pub const init = Endpoints.init;
 const Create = Endpoint(struct {
     const Body = struct {
         title: []const u8,
-        user_id: i64,
-        release_date: ?[]const u8,
-        director: []const u8,
-        runtime_minutes: u64,
-        studio: []const u8,
+        release_date: ?[]const u8 = null,
+        runtime_minutes: ?u64 = null,
     };
 
     const Response = struct {
@@ -42,9 +39,7 @@ const Create = Endpoint(struct {
             .title = req.body.title,
             .user_id = ctx.user_id.?,
             .release_date = req.body.release_date,
-            .director = req.body.director,
             .runtime_minutes = req.body.runtime_minutes,
-            .studio = req.body.studio,
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
