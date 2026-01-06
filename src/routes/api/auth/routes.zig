@@ -119,7 +119,9 @@ const CreateAPIKey = Endpoint(struct {
         .Request = .{},
         .Response = Response,
         .method = .POST,
-        .route_data = .{},
+        .route_data = .{
+            .restricted = true,
+        },
         .path = "/api/auth/keys",
     };
 

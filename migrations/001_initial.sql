@@ -26,6 +26,7 @@ CREATE SCHEMA content ;
 
 CREATE TABLE content.media_items (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+user_id integer REFERENCES auth.users (id) ON DELETE CASCADE,
 title TEXT NOT NULL,
 release_date DATE,
 cover_image_url TEXT,

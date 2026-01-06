@@ -60,7 +60,6 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
 }
 
 fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.Request, res: *httpz.Response) !void {
-
     // Should be used for all failure states in this function, as to minimize information leakage.
     const handleRejection = struct {
         fn handleRejection(response: *httpz.Response) !void {
