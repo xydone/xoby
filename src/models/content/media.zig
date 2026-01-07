@@ -87,11 +87,11 @@ pub const GetRating = struct {
         CannotParseID,
     } || DatabaseErrors;
 
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
-        var row = conn.rowOpts(
+        var query = conn.queryOpts(
             query_string,
             .{
                 request.user_id,
@@ -106,8 +106,8 @@ pub const GetRating = struct {
                 ErrorHandler.printErr(data);
             }
             return error.CannotGet;
-        } orelse return error.NotFound;
-        defer row.deinit() catch {};
+        };
+        defer query.deinit();
 
         // NOTE: needed as rating_score validation is done on the server and not in the database
         const DatabaseResponse = struct {
@@ -116,23 +116,22 @@ pub const GetRating = struct {
             created_at: i64,
         };
 
-        var response = row.to(DatabaseResponse, .{
-            .map = .name,
-        }) catch |err| {
-            log.err("Get Rating row.to failed! {}", .{err});
-            return error.CannotGet;
-        };
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
 
-        response.id = blk: {
-            const buf = UUID.toString(response.id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        var mapper = query.mapper(DatabaseResponse, .{});
+        while (mapper.next() catch return error.CannotGet) |response| {
+            responses.append(allocator, .{
+                .id = blk: {
+                    const buf = UUID.toString(response.id) catch return error.CannotParseID;
+                    break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
+                },
+                .created_at = response.created_at,
+                .rating_score = std.math.cast(u8, response.rating_score) orelse return error.InvalidRatingScore,
+            }) catch return error.OutOfMemory;
+        }
 
-        return Response{
-            .id = response.id,
-            .rating_score = std.math.cast(u8, response.rating_score) orelse return error.InvalidRatingScore,
-            .created_at = response.created_at,
-        };
+        return responses.toOwnedSlice(allocator) catch return error.OutOfMemory;
     }
 
     const query_string =

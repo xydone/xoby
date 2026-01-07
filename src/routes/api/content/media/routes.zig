@@ -70,7 +70,7 @@ const GetRating = Endpoint(struct {
         id: []const u8,
     };
 
-    const Response = struct {
+    const Response = []struct {
         id: []const u8,
         rating_score: u8,
         created_at: i64,
@@ -97,19 +97,20 @@ const GetRating = Endpoint(struct {
             .media_id = req.params.id,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
             log.err("Get Rating Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
-        defer response.deinit(allocator);
+        defer {
+            defer allocator.free(responses);
+            for (responses) |response| {
+                response.deinit(allocator);
+            }
+        }
 
         res.status = 200;
-        try res.json(Response{
-            .id = response.id,
-            .rating_score = response.rating_score,
-            .created_at = response.created_at,
-        }, .{});
+        try res.json(responses, .{});
     }
 });
 
