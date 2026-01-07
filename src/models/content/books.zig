@@ -1,7 +1,7 @@
 pub const Create = struct {
     pub const Request = struct {
         title: []const u8,
-        user_id: i64,
+        user_id: []const u8,
         release_date: ?[]const u8,
         page_count: ?i32,
     };
@@ -64,9 +64,6 @@ pub const Create = struct {
         \\ RETURNING (SELECT id FROM new_media), (SELECT title FROM new_media);
     ;
 };
-
-const Tests = @import("../../tests/setup.zig");
-const TestSetup = Tests.TestSetup;
 
 const Pool = @import("../../database.zig").Pool;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;

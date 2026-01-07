@@ -5,18 +5,18 @@ SELECT 'up SQL query';
 CREATE SCHEMA auth;
 
 CREATE TABLE auth.users (
-id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-created_at timestamp without time zone DEFAULT now () NOT NULL,
-display_name character varying (255) NOT NULL,
-username character varying (255) NOT NULL,
-password character varying (255) NOT NULL
-) ;
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    display_name character varying(255) NOT NULL,
+    username character varying(255) NOT NULL,
+    password character varying(255) NOT NULL
+);
 
 
 CREATE TABLE auth.api_keys (
 id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
 created_at timestamp without time zone DEFAULT now () NOT NULL,
-user_id integer NOT NULL,
+user_id uuid NOT NULL,
 public_id character varying (20) NOT NULL,
 secret_hash bytea NOT NULL
 ) ;
@@ -26,7 +26,7 @@ CREATE SCHEMA content ;
 
 CREATE TABLE content.media_items (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
-user_id integer REFERENCES auth.users (id) ON DELETE CASCADE,
+user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
 title TEXT NOT NULL,
 release_date DATE,
 cover_image_url TEXT,
@@ -81,26 +81,34 @@ PRIMARY KEY (media_id, organization_id, role_name)
 -- profiles
 CREATE SCHEMA profiles ;
 
-CREATE TABLE profiles.user_media_progress (
-user_id integer REFERENCES auth.users (id) ON DELETE CASCADE,
+CREATE TABLE profiles.progress (
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
-status TEXT CHECK (status IN ('planned', 'watching', 'completed', 'dropped')),
-progress_value INTEGER DEFAULT 0,
-updated_at TIMESTAMPTZ DEFAULT now (),
-PRIMARY KEY (user_id, media_id)
+status TEXT CHECK (status IN ('planned',
+'in_progress',
+'completed',
+'dropped')),
+progress_value INTEGER NOT NULL,
+created_at TIMESTAMPTZ DEFAULT now ()
 ) ;
 
+-- index the latest
+CREATE INDEX idx_progress_latest ON profiles.progress (user_id,
+media_id,
+created_at DESC) ;
+
 CREATE TABLE profiles.ratings (
-user_id integer REFERENCES auth.users (id) ON DELETE CASCADE,
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
 rating_score INTEGER CHECK (rating_score BETWEEN 1 AND 10),
-created_at TIMESTAMPTZ DEFAULT now (),
-PRIMARY KEY (user_id, media_id)
+created_at TIMESTAMPTZ DEFAULT now ()
 ) ;
 
 CREATE TABLE profiles.lists (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
-user_id integer REFERENCES auth.users (id) ON DELETE CASCADE,
+user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
 name TEXT NOT NULL,
 is_public BOOLEAN DEFAULT true,
 created_at TIMESTAMPTZ DEFAULT now ()

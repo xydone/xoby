@@ -19,7 +19,7 @@ pub const RouteData = struct {
 /// This will be passed to every request, should include things that would be needed inside a request but cannot/shouldn't be initialized every time.
 /// The difference between RequestContext and Handler is that the RequestContext can contain information that is provided by the dispatch function and middleware.
 pub const RequestContext = struct {
-    user_id: ?i64,
+    user_id: ?[]const u8,
     refresh_token: ?[]const u8,
     database_pool: *Database.Pool,
     redis_client: *redis.Client,
@@ -76,7 +76,7 @@ fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.R
 
         if (route_data.restricted) {
             if (api_key) |key| {
-                verifyAPIKey(ctx, key) catch {
+                verifyAPIKey(allocator, ctx, key) catch {
                     try handleRejection(res);
                 };
             } else if (access_token) |token| {
@@ -116,9 +116,9 @@ fn verifyJWT(allocator: std.mem.Allocator, ctx: *RequestContext, access_token: [
     ctx.user_id = decoded.claims.user_id;
 }
 
-fn verifyAPIKey(ctx: *RequestContext, api_key: []const u8) error{CannotGet}!void {
+fn verifyAPIKey(allocator: Allocator, ctx: *RequestContext, api_key: []const u8) error{CannotGet}!void {
     const GetUserByAPIKey = @import("models/auth/auth.zig").GetUserByAPIKey;
-    const id = GetUserByAPIKey.call(ctx.database_pool, api_key) catch return error.CannotGet;
+    const id = GetUserByAPIKey.call(allocator, ctx.database_pool, api_key) catch return error.CannotGet;
     ctx.user_id = id;
 }
 

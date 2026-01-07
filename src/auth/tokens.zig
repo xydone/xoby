@@ -1,5 +1,5 @@
 pub const JWTClaims = struct {
-    user_id: i32,
+    user_id: []const u8,
     exp: i64,
 };
 

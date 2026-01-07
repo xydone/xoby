@@ -104,7 +104,7 @@ pub const TestSetup = struct {
 };
 
 pub const RequestContext = struct {
-    pub fn init(config: Config, user_id: ?i64) !Handler.RequestContext {
+    pub fn init(config: Config, user_id: ?[]const u8) !Handler.RequestContext {
         return Handler.RequestContext{
             .user_id = user_id,
             .refresh_token = null,

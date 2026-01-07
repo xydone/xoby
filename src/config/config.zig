@@ -70,11 +70,17 @@ pub fn init(allocator: Allocator) InitErrors!Config {
 
 pub fn deinit(self: *Config, allocator: Allocator) void {
     allocator.free(self.address);
+    allocator.free(self.jwt_secret);
+    // database
     {
         allocator.free(self.database.host);
         allocator.free(self.database.username);
         allocator.free(self.database.name);
         allocator.free(self.database.password);
+    }
+    // redis
+    {
+        allocator.free(self.redis.address);
     }
 }
 

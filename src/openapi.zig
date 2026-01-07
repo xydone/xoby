@@ -4,8 +4,8 @@ pub fn main() !void {
         Auth.endpoint_data,
         Books.endpoint_data,
         Movies.endpoint_data,
-            // Media.endpoint_data,
-            // Profiles.endpoint_data,
+        // Media.endpoint_data,
+        Profiles.endpoint_data,
     };
 
     const allocator = std.heap.smp_allocator;

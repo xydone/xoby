@@ -1,51 +1,155 @@
-pub inline fn init(router: *Handler.Router) void {
-    Register.init(router);
-    Login.init(router);
-    CreateAPIKey.init(router);
-}
+const log = std.log.scoped(.profile_route);
 
-const Register = Endpoint(struct {
+const Endpoints = EndpointGroup(.{
+    CreateList,
+    ChangeList,
+    GetList,
+    GetLists,
+    GetProgress,
+    GetRatings,
+});
+
+pub const endpoint_data = Endpoints.endpoint_data;
+pub const init = Endpoints.init;
+
+const CreateList = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
     pub const endpoint_data: EndpointData = .{
-        .Request = .{},
-        .Response = struct {},
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
         .method = .POST,
-        .route_data = .{},
-        .path = "/api/register",
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/list",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         _ = ctx;
         _ = req;
         _ = res;
     }
 });
 
-const Login = Endpoint(struct {
+const GetList = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
     pub const endpoint_data: EndpointData = .{
-        .Request = .{},
-        .Response = struct {},
-        .method = .POST,
-        .route_data = .{},
-        .path = "/api/login",
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/list",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         _ = ctx;
         _ = req;
         _ = res;
     }
 });
 
-const CreateAPIKey = Endpoint(struct {
+const ChangeList = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
     pub const endpoint_data: EndpointData = .{
-        .Request = .{},
-        .Response = struct {},
-        .method = .POST,
-        .route_data = .{},
-        .path = "/api/keys",
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .PATCH,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/list",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
+        _ = ctx;
+        _ = req;
+        _ = res;
+    }
+});
+
+const GetRatings = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/ratings/",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
+        _ = ctx;
+        _ = req;
+        _ = res;
+    }
+});
+
+const GetProgress = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/progress",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
+        _ = ctx;
+        _ = req;
+        _ = res;
+    }
+});
+
+const GetLists = Endpoint(struct {
+    const Body = struct {};
+
+    const Response = struct {};
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/lists",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         _ = ctx;
         _ = req;
         _ = res;
@@ -55,7 +159,10 @@ const CreateAPIKey = Endpoint(struct {
 const Endpoint = @import("../../../endpoint.zig").Endpoint;
 const EndpointRequest = @import("../../../endpoint.zig").EndpointRequest;
 const EndpointData = @import("../../../endpoint.zig").EndpointData;
+const EndpointGroup = @import("../../../endpoint.zig").EndpointGroup;
 const handleResponse = @import("../../../endpoint.zig").handleResponse;
 
 const Handler = @import("../../../handler.zig");
 const httpz = @import("httpz");
+
+const std = @import("std");

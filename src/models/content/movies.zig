@@ -1,7 +1,7 @@
 pub const Create = struct {
     pub const Request = struct {
         title: []const u8,
-        user_id: i64,
+        user_id: []const u8,
         release_date: ?[]const u8,
         runtime_minutes: ?u64,
     };

@@ -17,7 +17,7 @@ const Register = Endpoint(struct {
         password: []const u8,
     };
     const Response = struct {
-        id: i32,
+        id: []const u8,
         display_name: []const u8,
         username: []const u8,
     };

@@ -14,10 +14,11 @@ pub const CreateUser = struct {
         password: []const u8,
     };
     pub const Response = struct {
-        id: i32,
+        id: []const u8,
         display_name: []const u8,
         username: []const u8,
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
+            allocator.free(self.id);
             allocator.free(self.display_name);
             allocator.free(self.username);
         }
@@ -26,6 +27,7 @@ pub const CreateUser = struct {
         CannotCreate,
         UsernameNotUnique,
         HashingError,
+        CannotParseID,
         OutOfMemory,
     } || DatabaseErrors;
     pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
@@ -46,7 +48,10 @@ pub const CreateUser = struct {
         } orelse return error.CannotCreate;
         defer row.deinit() catch {};
 
-        const id = row.get(i32, 0);
+        const id = blk: {
+            const buf = UUID.toString(row.get([]u8, 0)) catch return error.CannotParseID;
+            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
+        };
         const display_name = allocator.dupe(u8, row.get([]u8, 1)) catch return error.OutOfMemory;
         const username = allocator.dupe(u8, row.get([]u8, 2)) catch return error.OutOfMemory;
 
@@ -62,7 +67,7 @@ pub const CreateUser = struct {
 pub const DeleteUser = struct {
     pub const Response = bool;
     pub const Errors = error{NoUser} || DatabaseErrors;
-    pub fn call(database: *Pool, user_id: i32) Errors!void {
+    pub fn call(database: *Pool, user_id: []const u8) Errors!void {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
@@ -103,6 +108,7 @@ pub const CreateToken = struct {
     pub const Errors = error{
         CannotCreate,
         UserNotFound,
+        CannotParseID,
         RedisError,
         OutOfMemory,
     } || DatabaseErrors;
@@ -123,20 +129,23 @@ pub const CreateToken = struct {
             return error.CannotCreate;
         } orelse return error.UserNotFound;
         defer row.deinit() catch {};
-        const user_id = row.get(i32, 0);
+
+        const id = blk: {
+            const buf = UUID.toString(row.get([]u8, 0)) catch return error.CannotParseID;
+            break :blk props.allocator.dupe(u8, &buf) catch return error.OutOfMemory;
+        };
+        defer props.allocator.free(id);
+
         const hash = row.get([]u8, 1);
         const isValidPassword = verifyPassword(props.allocator, hash, request.password) catch return error.CannotCreate;
-        const claims = JWTClaims{ .user_id = user_id, .exp = generateAccessTokenExpiry() };
+        const claims = JWTClaims{ .user_id = id, .exp = generateAccessTokenExpiry() };
 
         if (!isValidPassword) return error.CannotCreate;
         const access_token = createJWT(props.allocator, claims, props.jwt_secret) catch return error.CannotCreate;
 
         const refresh_token = createSessionToken(props.allocator) catch return error.CannotCreate;
 
-        const value = std.fmt.allocPrint(props.allocator, "{}", .{user_id}) catch return error.OutOfMemory;
-        defer props.allocator.free(value);
-
-        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, value, REFRESH_TOKEN_EXPIRY) catch return error.RedisError;
+        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, id, REFRESH_TOKEN_EXPIRY) catch return error.RedisError;
         defer props.allocator.free(response);
 
         return Response{
@@ -160,15 +169,22 @@ pub const RefreshToken = struct {
         }
     };
 
-    pub const Errors = error{ CannotCreateJWT, UserNotFound, RedisError, ParseError };
+    pub const Errors = error{
+        CannotCreateJWT,
+        UserNotFound,
+        RedisError,
+        ParseError,
+        CannotParseID,
+        OutOfMemory,
+    };
     pub fn call(allocator: std.mem.Allocator, redis_client: *redis.Client, refresh_token: []const u8, jwt_secret: []const u8) Errors!Response {
-        const result = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
+        const id = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
             error.KeyValuePairNotFound => return error.UserNotFound,
             else => return error.RedisError,
         };
-        defer allocator.free(result);
-        const number = std.fmt.parseInt(i32, result, 10) catch return error.ParseError;
-        const claims = JWTClaims{ .user_id = number, .exp = generateAccessTokenExpiry() };
+        defer allocator.free(id);
+
+        const claims = JWTClaims{ .user_id = id, .exp = generateAccessTokenExpiry() };
 
         const access_token = createJWT(allocator, claims, jwt_secret) catch return error.CannotCreateJWT;
 
@@ -205,7 +221,7 @@ pub const CreateAPIKey = struct {
     };
 
     pub const Errors = error{ CannotCreate, UserNotFound } || DatabaseErrors;
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, user_id: i64) Errors!Response {
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, user_id: []const u8) Errors!Response {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
@@ -239,9 +255,15 @@ pub const CreateAPIKey = struct {
 };
 
 pub const GetUserByAPIKey = struct {
-    pub const Response = i32;
-    pub const Errors = error{ OutOfMemory, CannotGet, InvalidAPIKey, UserNotFound } || DatabaseErrors;
-    pub fn call(database: *Pool, api_key: []const u8) Errors!Response {
+    pub const Response = []const u8;
+    pub const Errors = error{
+        OutOfMemory,
+        CannotGet,
+        InvalidAPIKey,
+        UserNotFound,
+        CannotParseID,
+    } || DatabaseErrors;
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, api_key: []const u8) Errors!Response {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
@@ -264,13 +286,17 @@ pub const GetUserByAPIKey = struct {
         } orelse return error.UserNotFound;
         defer row.deinit() catch {};
 
-        const response = row.to(struct { user_id: i32, secret_hash: []u8 }, .{}) catch return error.CannotGet;
+        const response = row.to(struct { user_id: []u8, secret_hash: []u8 }, .{}) catch return error.CannotGet;
         std.debug.assert(response.secret_hash.len == 32);
         const hash = response.secret_hash[0..32].*;
 
         if (!verifyAPIKey(hash, secret)) return error.CannotGet;
 
-        return response.user_id;
+        const id = blk: {
+            const buf = UUID.toString(response.user_id) catch return error.CannotParseID;
+            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
+        };
+        return id;
     }
     const query_string =
         \\SELECT user_id, secret_hash
@@ -423,7 +449,7 @@ test "Model | Auth | Create" {
         var decoded = try jwt.decode(allocator, JWTClaims, create_response.access_token, .{ .secret = jwt_secret }, .{});
         defer decoded.deinit();
 
-        try std.testing.expectEqual(setup.user.id, decoded.claims.user_id);
+        try std.testing.expectEqualStrings(setup.user.id, decoded.claims.user_id);
     }
 }
 
@@ -554,6 +580,7 @@ const ErrorHandler = @import("../../database.zig").ErrorHandler;
 
 const Handler = @import("../../handler.zig");
 
+const UUID = @import("../../util/uuid.zig");
 const JWTClaims = @import("../../auth/tokens.zig").JWTClaims;
 
 const verifyPassword = @import("../../auth/password.zig").verifyPassword;

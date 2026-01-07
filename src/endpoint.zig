@@ -230,7 +230,7 @@ test "Base | Endpoint | Request body" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, null);
 
     {
         var web_test = ht.init(.{});
@@ -278,7 +278,7 @@ test "Base | Endpoint | Request params" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, null);
 
     var value_list = std.ArrayList(struct { name: []const u8, value: []u8 }).empty;
     defer {
@@ -344,7 +344,7 @@ test "Base | Endpoint | Request query" {
         }
     });
 
-    var ctx = try TestSetup.RequestContext.init(undefined, 1);
+    var ctx = try TestSetup.RequestContext.init(undefined, null);
 
     var value_list = std.ArrayList(struct { name: []const u8, value: []u8 }).empty;
     defer {
