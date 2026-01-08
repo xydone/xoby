@@ -111,6 +111,8 @@ pub const Types = enum {
             else => {},
         }
         return switch (T) {
+            i8,
+            u8,
             i16,
             u16,
             i32,
@@ -130,6 +132,7 @@ pub const Types = enum {
             => .number,
             []const u8, []u8, ?[]const u8, ?[]u8 => .string,
             []i32 => .array,
+            bool => .boolean,
             else => |t| @compileError(std.fmt.comptimePrint("{} not supported | {}", .{ t, type_info })),
         };
     }

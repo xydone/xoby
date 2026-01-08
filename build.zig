@@ -52,12 +52,12 @@ pub fn build(b: *std.Build) void {
         .root_module = module,
     });
 
-    const openapi_exe = b.addExecutable(.{
+    const exe_openapi = b.addExecutable(.{
         .name = NAME ++ "_openapi",
         .root_module = openapi_module,
     });
 
-    const run_openapi = b.addRunArtifact(openapi_exe);
+    const run_openapi = b.addRunArtifact(exe_openapi);
     const openapi_run_step = b.step("openapi", "Run OpenAPI generator");
     openapi_run_step.dependOn(&run_openapi.step);
 
@@ -95,4 +95,5 @@ pub fn build(b: *std.Build) void {
     const check = b.step("check", "Check if " ++ NAME ++ " compiles");
     check.dependOn(&exe_check.step);
     check.dependOn(&exe_tests.step);
+    check.dependOn(&exe_openapi.step);
 }
