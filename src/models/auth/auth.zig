@@ -48,10 +48,7 @@ pub const CreateUser = struct {
         } orelse return error.CannotCreate;
         defer row.deinit() catch {};
 
-        const id = blk: {
-            const buf = UUID.toString(row.get([]u8, 0)) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
         const display_name = allocator.dupe(u8, row.get([]u8, 1)) catch return error.OutOfMemory;
         const username = allocator.dupe(u8, row.get([]u8, 2)) catch return error.OutOfMemory;
 
@@ -130,10 +127,7 @@ pub const CreateToken = struct {
         } orelse return error.UserNotFound;
         defer row.deinit() catch {};
 
-        const id = blk: {
-            const buf = UUID.toString(row.get([]u8, 0)) catch return error.CannotParseID;
-            break :blk props.allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        const id = try UUID.toStringAlloc(props.allocator, row.get([]u8, 0));
         defer props.allocator.free(id);
 
         const hash = row.get([]u8, 1);
@@ -292,10 +286,7 @@ pub const GetUserByAPIKey = struct {
 
         if (!verifyAPIKey(hash, secret)) return error.CannotGet;
 
-        const id = blk: {
-            const buf = UUID.toString(response.user_id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
         return id;
     }
     const query_string =

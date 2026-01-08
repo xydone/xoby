@@ -122,10 +122,7 @@ pub const GetRating = struct {
         var mapper = query.mapper(DatabaseResponse, .{});
         while (mapper.next() catch return error.CannotGet) |response| {
             responses.append(allocator, .{
-                .id = blk: {
-                    const buf = UUID.toString(response.id) catch return error.CannotParseID;
-                    break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-                },
+                .id = try UUID.toStringAlloc(allocator, response.id),
                 .created_at = response.created_at,
                 .rating_score = std.math.cast(u8, response.rating_score) orelse return error.InvalidRatingScore,
             }) catch return error.OutOfMemory;
@@ -200,10 +197,7 @@ pub const EditRating = struct {
             return error.CannotEdit;
         };
 
-        response.id = blk: {
-            const buf = UUID.toString(response.id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        response.id = try UUID.toStringAlloc(allocator, response.id);
 
         return Response{
             .id = response.id,
@@ -278,20 +272,9 @@ pub const CreateProgress = struct {
             return error.CannotCreate;
         };
 
-        response.id = blk: {
-            const buf = UUID.toString(response.id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
-
-        response.media_id = blk: {
-            const buf = UUID.toString(response.media_id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
-
-        response.user_id = blk: {
-            const buf = UUID.toString(response.user_id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        response.id = try UUID.toStringAlloc(allocator, response.id);
+        response.media_id = try UUID.toStringAlloc(allocator, response.media_id);
+        response.user_id = try UUID.toStringAlloc(allocator, response.user_id);
 
         return response;
     }
@@ -348,10 +331,7 @@ pub const GetProgress = struct {
 
         var response = row.to(Response, .{ .allocator = allocator }) catch return error.CannotGet;
 
-        response.media_id = blk: {
-            const buf = UUID.toString(response.media_id) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        response.media_id = try UUID.toStringAlloc(allocator, response.media_id);
 
         return response;
     }
@@ -368,8 +348,6 @@ pub const GetProgress = struct {
 const Pool = @import("../../database.zig").Pool;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;
-
-const Handler = @import("../../handler.zig");
 
 const UUID = @import("../../util/uuid.zig");
 const JWTClaims = @import("../../auth/tokens.zig").JWTClaims;

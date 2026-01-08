@@ -13,9 +13,14 @@ pub const endpoint_data = Endpoints.endpoint_data;
 pub const init = Endpoints.init;
 
 const CreateList = Endpoint(struct {
-    const Body = struct {};
+    const Body = struct {
+        name: []const u8,
+        is_public: bool,
+    };
 
-    const Response = struct {};
+    const Response = struct {
+        id: []const u8,
+    };
 
     pub const endpoint_data: EndpointData = .{
         .Request = .{
@@ -30,13 +35,84 @@ const CreateList = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
+        const allocator = res.arena;
+        const Model = ProfileModel.CreateList;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+            .name = req.body.name,
+            .is_public = req.body.is_public,
+        };
+
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Create List Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+        defer response.deinit(allocator);
+
+        res.status = 200;
+        try res.json(Response{
+            .id = response.id,
+        }, .{});
     }
 });
 
 const GetList = Endpoint(struct {
+    const Params = struct {
+        id: []const u8,
+    };
+
+    const Response = struct {
+        id: []const u8,
+        user_id: []const u8,
+        name: []const u8,
+        is_public: bool,
+        created_at: i64,
+        items: []ProfileModel.GetList.Response.Item,
+    };
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Params = Params,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/profile/list/:id",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = ProfileModel.GetList;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+            .list_id = req.params.id,
+        };
+
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get List Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+        defer response.deinit(allocator);
+
+        res.status = 200;
+        try res.json(Response{
+            .id = response.id,
+            .user_id = response.user_id,
+            .name = response.name,
+            .is_public = response.is_public,
+            .created_at = response.created_at,
+            .items = response.items,
+        }, .{});
+    }
+});
+
+const GetLists = Endpoint(struct {
     const Body = struct {};
 
     const Response = struct {};
@@ -50,7 +126,7 @@ const GetList = Endpoint(struct {
         .route_data = .{
             .restricted = true,
         },
-        .path = "/api/profile/list",
+        .path = "/api/profile/lists",
     };
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
@@ -132,29 +208,7 @@ const GetProgress = Endpoint(struct {
     }
 });
 
-const GetLists = Endpoint(struct {
-    const Body = struct {};
-
-    const Response = struct {};
-
-    pub const endpoint_data: EndpointData = .{
-        .Request = .{
-            .Body = Body,
-        },
-        .Response = Response,
-        .method = .GET,
-        .route_data = .{
-            .restricted = true,
-        },
-        .path = "/api/profile/lists",
-    };
-
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
-    }
-});
+const ProfileModel = @import("../../../models/profiles/profiles.zig");
 
 const Endpoint = @import("../../../endpoint.zig").Endpoint;
 const EndpointRequest = @import("../../../endpoint.zig").EndpointRequest;

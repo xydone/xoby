@@ -115,9 +115,9 @@ created_at TIMESTAMPTZ DEFAULT now ()
 ) ;
 
 CREATE TABLE profiles.lists_items (
-collection_id uuid REFERENCES profiles.lists (id) ON DELETE CASCADE,
+list_id uuid REFERENCES profiles.lists (id) ON DELETE CASCADE,
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
-PRIMARY KEY (collection_id, media_id)
+PRIMARY KEY (list_id, media_id)
 ) ;
 
 -- +goose Down

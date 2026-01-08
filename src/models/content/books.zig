@@ -40,10 +40,7 @@ pub const Create = struct {
         } orelse return error.CannotCreate;
         defer row.deinit() catch {};
 
-        const id = blk: {
-            const buf = UUID.toString(row.get([]u8, 0)) catch return error.CannotParseID;
-            break :blk allocator.dupe(u8, &buf) catch return error.OutOfMemory;
-        };
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
 
         const title = allocator.dupe(u8, row.get([]u8, 1)) catch return error.OutOfMemory;
 
