@@ -148,7 +148,7 @@ pub const GetList = struct {
         return Response{
             .id = try UUID.toStringAlloc(allocator, database_response.id),
             .user_id = try UUID.toStringAlloc(allocator, database_response.user_id),
-            .name = database_response.name,
+            .name = allocator.dupe(u8, database_response.name) catch return error.OutOfMemory,
             .is_public = database_response.is_public,
             .created_at = database_response.created_at,
             .items = items,
@@ -173,6 +173,292 @@ pub const GetList = struct {
         \\ GROUP BY l.id;
     ;
 };
+
+pub const GetLists = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+        user_id: []const u8,
+        name: []const u8,
+        is_public: bool,
+        created_at: i64,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.user_id);
+            allocator.free(self.name);
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        NotFound,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+
+        var mapper = query.mapper(Response, .{});
+
+        while (mapper.next() catch return error.CannotGet) |response| {
+            responses.append(allocator, .{
+                .id = try UUID.toStringAlloc(allocator, response.id),
+                .user_id = try UUID.toStringAlloc(allocator, response.user_id),
+                .name = allocator.dupe(u8, response.name) catch return error.OutOfMemory,
+                .is_public = response.is_public,
+                .created_at = response.created_at,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string =
+        \\ SELECT *
+        \\ FROM profiles.lists
+        \\ WHERE user_id = $1;
+    ;
+};
+
+pub const ChangeList = struct {
+    pub const Request = struct {
+        id: []const u8,
+        user_id: []const u8,
+        name: []const u8,
+        is_public: bool,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+
+        pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
+            allocator.free(self.id);
+        }
+    };
+
+    pub const Errors = error{
+        NotFound,
+        CannotUpdate,
+        OutOfMemory,
+        CannotParseID,
+        CannotAcquireConnection,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+
+        const error_handler = ErrorHandler{ .conn = conn };
+
+        var row = conn.row(query_string, .{
+            request.id,
+            request.user_id,
+            request.name,
+            request.is_public,
+        }) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotUpdate;
+        } orelse return error.NotFound;
+
+        defer row.deinit() catch {};
+
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
+
+        return Response{
+            .id = id,
+        };
+    }
+
+    const query_string =
+        \\ UPDATE profiles.lists 
+        \\ SET name = $3, is_public = $4
+        \\ WHERE id = $1 AND user_id = $2
+        \\ RETURNING id;
+    ;
+};
+
+pub const GetRatings = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+        user_id: []const u8,
+        media_id: []const u8,
+        rating_score: u8,
+        created_at: i64,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.user_id);
+            allocator.free(self.media_id);
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        InvalidRatingScore,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+
+        const DatabaseResponse = struct {
+            id: []const u8,
+            user_id: []const u8,
+            media_id: []const u8,
+            // need to do this due to manual parsing of the rating score
+            rating_score: i32,
+            created_at: i64,
+        };
+
+        var mapper = query.mapper(DatabaseResponse, .{});
+
+        while (mapper.next() catch return error.CannotGet) |response| {
+            responses.append(allocator, .{
+                .id = try UUID.toStringAlloc(allocator, response.id),
+                .user_id = try UUID.toStringAlloc(allocator, response.user_id),
+                .media_id = allocator.dupe(u8, response.media_id) catch return error.OutOfMemory,
+                .rating_score = std.math.cast(u8, response.rating_score) orelse return error.InvalidRatingScore,
+                .created_at = response.created_at,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string =
+        \\ SELECT *
+        \\ FROM profiles.ratings
+        \\ WHERE user_id = $1;
+    ;
+};
+
+pub const GetAllProgress = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+        user_id: []const u8,
+        media_id: []const u8,
+        status: ProgressStatus,
+        created_at: i64,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.user_id);
+            allocator.free(self.media_id);
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+
+        var mapper = query.mapper(Response, .{});
+
+        while (mapper.next() catch return error.CannotGet) |response| {
+            responses.append(allocator, .{
+                .id = try UUID.toStringAlloc(allocator, response.id),
+                .user_id = try UUID.toStringAlloc(allocator, response.user_id),
+                .media_id = allocator.dupe(u8, response.media_id) catch return error.OutOfMemory,
+                .status = response.status,
+                .created_at = response.created_at,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string =
+        \\ SELECT *
+        \\ FROM profiles.ratings
+        \\ WHERE user_id = $1;
+    ;
+};
+
+const ProgressStatus = @import("../../models/content/content.zig").Media.ProgressStatus;
 
 const Pool = @import("../../database.zig").Pool;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;

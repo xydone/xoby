@@ -5,7 +5,7 @@ const Endpoints = EndpointGroup(.{
     ChangeList,
     GetList,
     GetLists,
-    GetProgress,
+    GetAllProgress,
     GetRatings,
 });
 
@@ -113,14 +113,16 @@ const GetList = Endpoint(struct {
 });
 
 const GetLists = Endpoint(struct {
-    const Body = struct {};
-
-    const Response = struct {};
+    const Response = []struct {
+        id: []const u8,
+        user_id: []const u8,
+        name: []const u8,
+        is_public: bool,
+        created_at: i64,
+    };
 
     pub const endpoint_data: EndpointData = .{
-        .Request = .{
-            .Body = Body,
-        },
+        .Request = .{},
         .Response = Response,
         .method = .GET,
         .route_data = .{
@@ -129,17 +131,39 @@ const GetLists = Endpoint(struct {
         .path = "/api/profile/lists",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = ProfileModel.GetLists;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+        };
+
+        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get List Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+
+        defer {
+            defer allocator.free(responses);
+            for (responses) |response| response.deinit(allocator);
+        }
+
+        res.status = 200;
+        try res.json(responses, .{});
     }
 });
 
 const ChangeList = Endpoint(struct {
-    const Body = struct {};
+    const Body = struct {
+        name: []const u8,
+        is_public: bool,
+    };
 
-    const Response = struct {};
+    const Response = struct {
+        id: []const u8,
+    };
 
     pub const endpoint_data: EndpointData = .{
         .Request = .{
@@ -154,21 +178,40 @@ const ChangeList = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
+        const allocator = res.arena;
+        const Model = ProfileModel.CreateList;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+            .name = req.body.name,
+            .is_public = req.body.is_public,
+        };
+
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Change List Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+        defer response.deinit(allocator);
+
+        res.status = 200;
+        try res.json(Response{
+            .id = response.id,
+        }, .{});
     }
 });
 
 const GetRatings = Endpoint(struct {
-    const Body = struct {};
-
-    const Response = struct {};
+    const Response = []struct {
+        id: []const u8,
+        user_id: []const u8,
+        media_id: []const u8,
+        rating_score: u8,
+        created_at: i64,
+    };
 
     pub const endpoint_data: EndpointData = .{
-        .Request = .{
-            .Body = Body,
-        },
+        .Request = .{},
         .Response = Response,
         .method = .GET,
         .route_data = .{
@@ -177,22 +220,41 @@ const GetRatings = Endpoint(struct {
         .path = "/api/profile/ratings/",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = ProfileModel.GetRatings;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+        };
+
+        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get Ratings Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+
+        defer {
+            defer allocator.free(responses);
+            for (responses) |response| response.deinit(allocator);
+        }
+
+        res.status = 200;
+        try res.json(responses, .{});
     }
 });
 
-const GetProgress = Endpoint(struct {
-    const Body = struct {};
-
-    const Response = struct {};
+const GetAllProgress = Endpoint(struct {
+    const Response = []struct {
+        id: []const u8,
+        user_id: []const u8,
+        media_id: []const u8,
+        status: ProgressStatus,
+        created_at: i64,
+    };
 
     pub const endpoint_data: EndpointData = .{
-        .Request = .{
-            .Body = Body,
-        },
+        .Request = .{},
         .Response = Response,
         .method = .GET,
         .route_data = .{
@@ -201,13 +263,31 @@ const GetProgress = Endpoint(struct {
         .path = "/api/profile/progress",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        _ = ctx;
-        _ = req;
-        _ = res;
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = ProfileModel.GetAllProgress;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+        };
+
+        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get All Progress Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+
+        defer {
+            defer allocator.free(responses);
+            for (responses) |response| response.deinit(allocator);
+        }
+
+        res.status = 200;
+        try res.json(responses, .{});
     }
 });
 
+const ProgressStatus = @import("../../../models/content/content.zig").Media.ProgressStatus;
 const ProfileModel = @import("../../../models/profiles/profiles.zig");
 
 const Endpoint = @import("../../../endpoint.zig").Endpoint;
