@@ -37,7 +37,17 @@ pub fn main() !void {
         server.stop();
     }
 
-    const router = try server.router(.{});
+    const cors = try server.middleware(CORS, .{
+        .origin = "*",
+        .headers = "*",
+        .methods = "*",
+    });
+
+    const router = try server.router(
+        .{
+            .middlewares = &.{cors},
+        },
+    );
 
     API.init(router);
 
@@ -72,6 +82,7 @@ const redis = @import("redis.zig");
 const Database = @import("database.zig");
 const Config = @import("config/config.zig");
 
+const CORS = @import("middleware/cors.zig");
 const Handler = @import("handler.zig");
 
 const httpz = @import("httpz");

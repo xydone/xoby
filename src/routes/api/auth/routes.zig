@@ -93,7 +93,7 @@ const Login = Endpoint(struct {
         };
 
         var response = Model.call(create_props, request) catch |err| switch (err) {
-            Model.Errors.UserNotFound => {
+            Model.Errors.UserNotFound, Model.Errors.InvalidPassword => {
                 handleResponse(res, .unauthorized, null);
                 return;
             },

@@ -104,6 +104,7 @@ pub const CreateToken = struct {
 
     pub const Errors = error{
         CannotCreate,
+        InvalidPassword,
         UserNotFound,
         CannotParseID,
         RedisError,
@@ -134,7 +135,7 @@ pub const CreateToken = struct {
         const isValidPassword = verifyPassword(props.allocator, hash, request.password) catch return error.CannotCreate;
         const claims = JWTClaims{ .user_id = id, .exp = generateAccessTokenExpiry() };
 
-        if (!isValidPassword) return error.CannotCreate;
+        if (!isValidPassword) return error.InvalidPassword;
         const access_token = createJWT(props.allocator, claims, props.jwt_secret) catch return error.CannotCreate;
 
         const refresh_token = createSessionToken(props.allocator) catch return error.CannotCreate;
