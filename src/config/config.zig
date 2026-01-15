@@ -48,6 +48,22 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         log.err("env failed with {}", .{err});
         return error.CouldntReadEnv;
     };
+    errdefer env.deinit(allocator);
+
+    const jwt_secret = blk: {
+        if (config_file.jwt_secret) |jwt_secret| break :blk allocator.dupe(u8, jwt_secret) catch @panic("OOM");
+        log.err("\"jwt_secret\" inside config.zon is null. Please set it to a correct value.", .{});
+        return error.RequiredNullableFieldMissing;
+    };
+    errdefer allocator.free(jwt_secret);
+
+    const assets_dir = blk: {
+        if (config_file.assets_dir) |dir| break :blk allocator.dupe(u8, dir) catch @panic("OOM");
+        log.err("\"assets_dir\" inside config.zon is null. Please set it to a correct value.", .{});
+        return error.RequiredNullableFieldMissing;
+    };
+    errdefer allocator.free(assets_dir);
+
     return .{
         .port = config_file.port,
         .address = allocator.dupe(u8, config_file.address) catch @panic("OOM"),
@@ -62,16 +78,8 @@ pub fn init(allocator: Allocator) InitErrors!Config {
             .port = env.REDIS_PORT,
             .address = env.REDIS_ADDRESS,
         },
-        .jwt_secret = blk: {
-            if (config_file.jwt_secret) |jwt_secret| break :blk allocator.dupe(u8, jwt_secret) catch @panic("OOM");
-            log.err("\"jwt_secret\" inside config.zon is null. Please set it to a correct value.", .{});
-            return error.RequiredNullableFieldMissing;
-        },
-        .assets_dir = blk: {
-            if (config_file.assets_dir) |dir| break :blk allocator.dupe(u8, dir) catch @panic("OOM");
-            log.err("\"assets_dir\" inside config.zon is null. Please set it to a correct value.", .{});
-            return error.RequiredNullableFieldMissing;
-        },
+        .jwt_secret = jwt_secret,
+        .assets_dir = assets_dir,
     };
 }
 
