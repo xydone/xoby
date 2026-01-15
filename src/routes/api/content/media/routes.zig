@@ -1,6 +1,7 @@
 const log = std.log.scoped(.media_route);
 
 const Endpoints = EndpointGroup(.{
+    GetInformation,
     Rate,
     EditRating,
     GetRating,
@@ -10,6 +11,45 @@ const Endpoints = EndpointGroup(.{
 
 pub const endpoint_data = Endpoints.endpoint_data;
 pub const init = Endpoints.init;
+
+const GetInformation = Endpoint(struct {
+    const Params = struct {
+        id: []const u8,
+    };
+
+    const Response = Model.Response;
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Params = Params,
+        },
+        .Response = Response,
+        .method = .POST,
+        .route_data = .{
+            .restricted = true,
+        },
+        .path = "/api/media/:id",
+    };
+
+    const Model = MediaModel.GetInformation;
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+
+        const request = Model.Request{
+            .media_id = req.params.id,
+        };
+
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get Information Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+        defer response.deinit(allocator);
+
+        res.status = 200;
+        try res.json(response, .{});
+    }
+});
 
 const Rate = Endpoint(struct {
     const Body = struct {

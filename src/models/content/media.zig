@@ -7,6 +7,142 @@ pub const ProgressStatus = enum {
     dropped,
 };
 
+pub const GetInformation = struct {
+    pub const Request = struct {
+        media_id: []const u8,
+    };
+
+    pub const MediaType = enum { movie, book };
+
+    pub const Response = struct {
+        id: []u8,
+        title: []u8,
+        media_type: MediaType,
+        release_date: ?i64,
+        cover_image_url: ?[]u8,
+        data: union(MediaType) {
+            movie: MovieData,
+            book: BookData,
+        },
+
+        pub const MovieData = struct {
+            // movie specific fields
+            runtime_minutes: ?i64,
+
+            pub fn deinit(self: MovieData, allocator: Allocator) void {
+                _ = self;
+                _ = allocator;
+            }
+        };
+
+        /// book specific fields
+        pub const BookData = struct {
+            page_count: ?i32,
+
+            pub fn deinit(self: BookData, allocator: Allocator) void {
+                _ = self;
+                _ = allocator;
+            }
+        };
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.title);
+            if (self.cover_image_url) |url| allocator.free(url);
+            switch (self.data) {
+                inline else => |data| {
+                    data.deinit(allocator);
+                },
+            }
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        NotFound,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+        var row = conn.rowOpts(
+            query_string,
+            .{
+                request.media_id,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        } orelse return error.NotFound;
+        defer row.deinit() catch {};
+
+        const DatabaseResponse = struct {
+            id: []u8,
+            title: []u8,
+            media_type: MediaType,
+            release_date: ?i64,
+            cover_image_url: ?[]u8,
+            // movie specific fields
+            runtime_minutes: ?i64,
+            // book specific fields
+            page_count: ?i32,
+        };
+
+        const response = row.to(DatabaseResponse, .{ .allocator = allocator }) catch |err| {
+            log.err("Couldn't parse response! {}", .{err});
+            return error.CannotGet;
+        };
+
+        return Response{
+            .id = allocator.dupe(u8, response.id) catch return error.OutOfMemory,
+            .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
+            .media_type = response.media_type,
+            .release_date = response.release_date,
+            .cover_image_url = if (response.cover_image_url) |url| allocator.dupe(u8, url) catch return error.OutOfMemory else response.cover_image_url,
+            .data = switch (response.media_type) {
+                .movie => blk: {
+                    break :blk .{
+                        .movie = .{
+                            .runtime_minutes = response.runtime_minutes,
+                        },
+                    };
+                },
+                .book => blk: {
+                    break :blk .{
+                        .book = .{
+                            .page_count = response.page_count,
+                        },
+                    };
+                },
+            },
+        };
+    }
+
+    const query_string =
+        \\ SELECT 
+        \\ m.id,
+        \\ m.title,
+        \\ m.media_type,
+        \\ m.release_date,
+        \\ m.cover_image_url,
+        \\ mov.runtime_minutes,
+        \\ bk.page_count
+        \\ FROM content.media_items m
+        \\ LEFT JOIN content.movies mov ON m.id = mov.media_id AND m.media_type = 'movie'
+        \\ LEFT JOIN content.books bk ON m.id = bk.media_id AND m.media_type = 'book'
+        \\ WHERE m.id = $1;
+    ;
+};
+
 pub const CreateRating = struct {
     pub const Request = struct {
         user_id: []const u8,

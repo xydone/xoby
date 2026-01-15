@@ -12,6 +12,8 @@ redis: struct {
     port: u16,
 },
 jwt_secret: []u8,
+/// Absolute path to the folder where assets, such as cover arts, are stored.
+assets_dir: []u8,
 
 const path = "config/config.zon";
 const log = std.log.scoped(.config);
@@ -24,12 +26,13 @@ const ConfigFile = struct {
     port: u16,
     address: []const u8,
     jwt_secret: ?[]const u8,
+    assets_dir: ?[]const u8,
 };
 
 pub const InitErrors = error{
     CouldntReadFile,
     CouldntReadEnv,
-    MissingJWTSecret,
+    RequiredNullableFieldMissing,
 };
 
 pub fn init(allocator: Allocator) InitErrors!Config {
@@ -61,9 +64,13 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         },
         .jwt_secret = blk: {
             if (config_file.jwt_secret) |jwt_secret| break :blk allocator.dupe(u8, jwt_secret) catch @panic("OOM");
-            // if this code is reached, jwt_secret was null, thus probably not changed from the default
             log.err("\"jwt_secret\" inside config.zon is null. Please set it to a correct value.", .{});
-            return error.MissingJWTSecret;
+            return error.RequiredNullableFieldMissing;
+        },
+        .assets_dir = blk: {
+            if (config_file.assets_dir) |dir| break :blk allocator.dupe(u8, dir) catch @panic("OOM");
+            log.err("\"assets_dir\" inside config.zon is null. Please set it to a correct value.", .{});
+            return error.RequiredNullableFieldMissing;
         },
     };
 }

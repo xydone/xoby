@@ -10,4 +10,7 @@
     // The secret that will be used to authenticate JWTs.
     // NOTE: this has to be changed in order to run.
     .jwt_secret = null,
+
+    // Absolute path to the folder where assets, such as cover arts, are stored.
+    .assets_dir = null,
 }
