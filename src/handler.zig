@@ -11,9 +11,11 @@ pub const Router = httpz.Router(*Handler, *const fn (*Handler.RequestContext, *h
 /// Gives information about what the route is to the dispatch function and middleware.
 pub const RouteData = struct {
     /// Requires authentication.
-    restricted: bool = false,
+    signed_in: bool = false,
     /// Requires a refresh token.
     refresh: bool = false,
+    /// Requires elevated permissions.
+    admin: bool = false,
 };
 
 /// This will be passed to every request, should include things that would be needed inside a request but cannot/shouldn't be initialized every time.
@@ -74,7 +76,7 @@ fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.R
         const api_key = req.header("x-api-key");
         const access_token = req.header("authorization");
 
-        if (route_data.restricted) {
+        if (route_data.signed_in) {
             if (api_key) |key| {
                 verifyAPIKey(allocator, ctx, key) catch {
                     try handleRejection(res);

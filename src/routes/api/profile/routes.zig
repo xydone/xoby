@@ -29,7 +29,7 @@ const CreateList = Endpoint(struct {
         .Response = Response,
         .method = .POST,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/list",
     };
@@ -79,7 +79,7 @@ const GetList = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/list/:id",
     };
@@ -126,7 +126,7 @@ const GetLists = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/lists",
     };
@@ -172,7 +172,7 @@ const ChangeList = Endpoint(struct {
         .Response = Response,
         .method = .PATCH,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/list",
     };
@@ -215,7 +215,7 @@ const GetRatings = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/ratings/",
     };
@@ -258,7 +258,7 @@ const GetAllProgress = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/profile/progress",
     };

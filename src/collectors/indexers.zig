@@ -1,12 +1,12 @@
 const log = std.log.scoped(.indexers);
 
-pub fn init(
+pub fn fetch(
     allocator: Allocator,
     database: *Database,
     config: Config,
 ) !void {
     if (config.collectors.tmdb.enable) {
-        TMDB.init(allocator, database, config.collectors.tmdb.indexer_path.?) catch |err| {
+        TMDB.fetch(allocator, database, config.collectors.tmdb.indexer_path.?) catch |err| {
             log.err("TMDB failed! {}", .{err});
         };
     }

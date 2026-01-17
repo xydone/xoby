@@ -1,7 +1,7 @@
 const log = std.log.scoped(.collectors_model);
 pub const Create = struct {
     pub const Request = struct {
-        provider: []u8,
+        provider: []const u8,
         id_list: []i64,
         media_type: MediaType,
     };

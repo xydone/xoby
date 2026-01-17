@@ -26,7 +26,7 @@ const Create = Endpoint(struct {
         .Response = Response,
         .method = .POST,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/movies/",
     };

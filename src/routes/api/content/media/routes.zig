@@ -26,7 +26,7 @@ const GetInformation = Endpoint(struct {
         .Response = Response,
         .method = .POST,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/:id",
     };
@@ -73,7 +73,7 @@ const Rate = Endpoint(struct {
         .Response = Response,
         .method = .POST,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/:id/rating",
     };
@@ -123,7 +123,7 @@ const GetRating = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/:id/rating",
     };
@@ -177,7 +177,7 @@ const EditRating = Endpoint(struct {
         .Response = Response,
         .method = .PATCH,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/rating/:rating_id",
     };
@@ -235,7 +235,7 @@ const CreateProgress = Endpoint(struct {
         .Response = Response,
         .method = .POST,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/:media_id/progress",
     };
@@ -289,7 +289,7 @@ const GetProgress = Endpoint(struct {
         .Response = Response,
         .method = .GET,
         .route_data = .{
-            .restricted = true,
+            .signed_in = true,
         },
         .path = "/api/media/:id/progress",
     };
