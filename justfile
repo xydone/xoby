@@ -1,6 +1,6 @@
 set dotenv-load := false
 
-MIGRATIONS_DIR := "migrations"
+MIGRATIONS_DIR := justfile_directory() + "/migrations"
 
 [no-cd]
 migrate-up:
