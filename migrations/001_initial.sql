@@ -24,16 +24,19 @@ secret_hash bytea NOT NULL
 -- content schema, includes media such as movies, manga, etc.
 CREATE SCHEMA content ;
 
+CREATE TYPE content.media_type AS ENUM ('movie',
+'book',
+'comic',
+'manga'
+) ;
+
 CREATE TABLE content.media_items (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
 user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
 title TEXT NOT NULL,
 release_date DATE,
 cover_image_url TEXT,
-media_type TEXT NOT NULL CHECK (media_type IN ('movie',
-'book',
-'comic',
-'manga')),
+media_type content.media_type NOT NULL,
 created_at TIMESTAMPTZ DEFAULT now ()
 ) ;
 
@@ -60,6 +63,17 @@ UNIQUE (provider, external_id)
 -- index for over time scanning
 CREATE INDEX idx_mappings_sync ON content.external_mappings (last_synced_at)
 WHERE last_synced_at IS NULL ;
+
+
+CREATE SCHEMA collectors ;
+
+CREATE TABLE collectors.list (
+provider TEXT NOT NULL,
+external_id TEXT NOT NULL,
+media_type content.media_type NOT NULL,
+created_at TIMESTAMPTZ DEFAULT now (),
+PRIMARY KEY (provider, external_id)
+) ;
 
 -- staff and organisations
 
