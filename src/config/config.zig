@@ -1,30 +1,45 @@
 port: u16,
 address: []u8,
-database: struct {
+database: Database,
+redis: Redis,
+jwt_secret: []u8,
+/// Absolute path to the folder where assets, such as cover arts, are stored.
+assets_dir: []u8,
+collectors: Collectors,
+
+const Database = struct {
     port: u16,
     host: []const u8,
     username: []const u8,
     name: []const u8,
     password: []const u8,
-},
-redis: struct {
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.host);
+        allocator.free(self.username);
+        allocator.free(self.name);
+        allocator.free(self.password);
+    }
+};
+
+const Redis = struct {
     address: []const u8,
     port: u16,
-},
-jwt_secret: []u8,
-/// Absolute path to the folder where assets, such as cover arts, are stored.
-assets_dir: []u8,
-collectors: Collectors,
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.address);
+    }
+};
 
 pub const Collectors = struct {
     tmdb: TMDB,
 
     pub const TMDB = struct {
         enable: bool,
-        path: ?[]u8,
+        indexer_path: ?[]const u8,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
-            if (self.path) |p| allocator.free(p);
+            if (self.indexer_path) |p| allocator.free(p);
         }
     };
 
@@ -68,7 +83,7 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         log.err("env failed with {}", .{err});
         return error.CouldntReadEnv;
     };
-    errdefer env.deinit(allocator);
+    defer env.deinit(allocator);
 
     const jwt_secret = blk: {
         if (config_file.jwt_secret) |jwt_secret| break :blk allocator.dupe(u8, jwt_secret) catch @panic("OOM");
@@ -89,27 +104,27 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         .address = allocator.dupe(u8, config_file.address) catch @panic("OOM"),
         .database = .{
             .port = env.DATABASE_PORT,
-            .host = env.DATABASE_HOST,
-            .username = env.DATABASE_USERNAME,
-            .name = env.DATABASE_NAME,
-            .password = env.DATABASE_PASSWORD,
+            .host = allocator.dupe(u8, env.DATABASE_HOST) catch return error.OutOfMemory,
+            .username = allocator.dupe(u8, env.DATABASE_USERNAME) catch return error.OutOfMemory,
+            .name = allocator.dupe(u8, env.DATABASE_NAME) catch return error.OutOfMemory,
+            .password = allocator.dupe(u8, env.DATABASE_PASSWORD) catch return error.OutOfMemory,
         },
         .redis = .{
             .port = env.REDIS_PORT,
-            .address = env.REDIS_ADDRESS,
+            .address = allocator.dupe(u8, env.REDIS_ADDRESS) catch return error.OutOfMemory,
         },
         .jwt_secret = jwt_secret,
         .assets_dir = assets_dir,
         .collectors = .{
             .tmdb = .{
                 .enable = config_file.collectors.tmdb.enable,
-                .path = blk: {
+                .indexer_path = blk: {
                     if (config_file.collectors.tmdb.enable == false) break :blk null;
 
-                    if (config_file.collectors.tmdb.path) |p| {
+                    if (config_file.collectors.tmdb.indexer_path) |p| {
                         break :blk allocator.dupe(u8, p) catch return error.OutOfMemory;
                     } else {
-                        log.err("Collector \"TMDB\" is enabled, but path is missing.", .{});
+                        log.err("Collector \"TMDB\" is enabled, but indexer_path is missing.", .{});
                         return error.RequiredNullableFieldMissing;
                     }
                 },
@@ -121,17 +136,9 @@ pub fn init(allocator: Allocator) InitErrors!Config {
 pub fn deinit(self: *Config, allocator: Allocator) void {
     allocator.free(self.address);
     allocator.free(self.jwt_secret);
-    // database
-    {
-        allocator.free(self.database.host);
-        allocator.free(self.database.username);
-        allocator.free(self.database.name);
-        allocator.free(self.database.password);
-    }
-    // redis
-    {
-        allocator.free(self.redis.address);
-    }
+    allocator.free(self.assets_dir);
+    self.redis.deinit(allocator);
+    self.database.deinit(allocator);
     self.collectors.deinit(allocator);
 }
 

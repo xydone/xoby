@@ -2,7 +2,7 @@ const log = std.log.scoped(.indexers);
 
 pub fn init(config: Config, allocator: Allocator) !void {
     if (config.collectors.tmdb.enable) {
-        TMDB.init(allocator, .{ .file = .{ .absolute_path = config.collectors.tmdb.path.? } }) catch |err| {
+        TMDB.init(allocator, config.collectors.tmdb.indexer_path.?) catch |err| {
             log.err("TMDB failed! {}", .{err});
         };
     }

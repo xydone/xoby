@@ -13,7 +13,7 @@ pub const Data = struct {
 const IngestType = enum { file, request };
 
 const AMOUNT_OF_PREALLOCATED_DATA = 1_000;
-pub fn init(allocator: Allocator, absolute_path: []u8) !void {
+pub fn init(allocator: Allocator, absolute_path: []const u8) !void {
     var id_list = try std.ArrayList(u64).initCapacity(allocator, AMOUNT_OF_PREALLOCATED_DATA);
     defer id_list.deinit(allocator);
 
@@ -22,7 +22,32 @@ pub fn init(allocator: Allocator, absolute_path: []u8) !void {
 
     var is_first_run = true;
 
-    const data_file = try std.fs.openFileAbsolute(absolute_path, .{});
+    var dir = try std.fs.openDirAbsolute(absolute_path, .{ .iterate = true });
+    defer dir.close();
+
+    var iter = dir.iterate();
+    // get the name of the most recently modified index file inside the directory
+    const newest_name: []u8 = blk: {
+        var max_mtime: i128 = -1;
+
+        while (try iter.next()) |entry| {
+            if (entry.kind != .file) continue;
+
+            const stats = try dir.statFile(entry.name);
+
+            if (stats.mtime > max_mtime) {
+                max_mtime = stats.mtime;
+
+                break :blk try allocator.dupe(u8, entry.name);
+            }
+        }
+        log.warn("TMDB indexer folder is empty!", .{});
+        return error.FolderEmpty;
+    };
+
+    var data_file = try dir.openFile(newest_name, .{});
+    defer data_file.close();
+
     var buf: [1024 * 64]u8 = undefined;
     var reader = data_file.reader(&buf);
 
