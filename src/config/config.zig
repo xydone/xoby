@@ -14,6 +14,24 @@ redis: struct {
 jwt_secret: []u8,
 /// Absolute path to the folder where assets, such as cover arts, are stored.
 assets_dir: []u8,
+collectors: Collectors,
+
+pub const Collectors = struct {
+    tmdb: TMDB,
+
+    pub const TMDB = struct {
+        enable: bool,
+        path: ?[]u8,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            if (self.path) |p| allocator.free(p);
+        }
+    };
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        self.tmdb.deinit(allocator);
+    }
+};
 
 const path = "config/config.zon";
 const log = std.log.scoped(.config);
@@ -27,12 +45,14 @@ const ConfigFile = struct {
     address: []const u8,
     jwt_secret: ?[]const u8,
     assets_dir: ?[]const u8,
+    collectors: Collectors,
 };
 
 pub const InitErrors = error{
     CouldntReadFile,
     CouldntReadEnv,
     RequiredNullableFieldMissing,
+    OutOfMemory,
 };
 
 pub fn init(allocator: Allocator) InitErrors!Config {
@@ -80,6 +100,21 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         },
         .jwt_secret = jwt_secret,
         .assets_dir = assets_dir,
+        .collectors = .{
+            .tmdb = .{
+                .enable = config_file.collectors.tmdb.enable,
+                .path = blk: {
+                    if (config_file.collectors.tmdb.enable == false) break :blk null;
+
+                    if (config_file.collectors.tmdb.path) |p| {
+                        break :blk allocator.dupe(u8, p) catch return error.OutOfMemory;
+                    } else {
+                        log.err("Collector \"TMDB\" is enabled, but path is missing.", .{});
+                        return error.RequiredNullableFieldMissing;
+                    }
+                },
+            },
+        },
     };
 }
 
@@ -97,6 +132,7 @@ pub fn deinit(self: *Config, allocator: Allocator) void {
     {
         allocator.free(self.redis.address);
     }
+    self.collectors.deinit(allocator);
 }
 
 const readFileZon = @import("common.zig").readFileZon;

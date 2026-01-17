@@ -47,6 +47,20 @@ media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
 page_count INTEGER
 ) ;
 
+
+CREATE TABLE content.external_mappings (
+media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+provider TEXT NOT NULL,
+external_id TEXT NOT NULL,
+last_synced_at TIMESTAMPTZ,
+PRIMARY KEY (media_id, provider),
+UNIQUE (provider, external_id)
+) ;
+
+-- index for over time scanning
+CREATE INDEX idx_mappings_sync ON content.external_mappings (last_synced_at)
+WHERE last_synced_at IS NULL ;
+
 -- staff and organisations
 
 CREATE TABLE content.people (

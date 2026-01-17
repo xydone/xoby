@@ -13,4 +13,19 @@
 
     // Absolute path to the folder where assets, such as cover arts, are stored.
     .assets_dir = null,
+
+    // List of metadata collectors
+    .collectors = .{
+        // The Movie Database
+        // https://www.themoviedb.org/
+        .tmdb = .{
+            // Whether or not to enable the collector.
+            // Further configurations will not be refered to by Xoby if this is false.
+            .enable = false,
+            // Where should the server look for index files
+            // Index files are the files which contain all movie ids
+            // https://developer.themoviedb.org/docs/daily-id-exports#example
+            .indexer_path = null,
+        },
+    },
 }

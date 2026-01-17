@@ -81,6 +81,7 @@ const API = @import("routes/routes.zig");
 const redis = @import("redis.zig");
 const Database = @import("database.zig");
 const Config = @import("config/config.zig");
+const Collectors = @import("collectors/collectors.zig");
 
 const CORS = @import("middleware/cors.zig");
 const Handler = @import("handler.zig");
