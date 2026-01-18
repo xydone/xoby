@@ -115,11 +115,16 @@ const Login = Endpoint(struct {
 });
 
 const CreateAPIKey = Endpoint(struct {
+    const Body = struct {
+        permissions: AuthModel.Roles,
+    };
     const Response = struct {
         api_key: []const u8,
     };
     pub const endpoint_data: EndpointData = .{
-        .Request = .{},
+        .Request = .{
+            .Body = Body,
+        },
         .Response = Response,
         .method = .POST,
         .route_data = .{
@@ -128,17 +133,20 @@ const CreateAPIKey = Endpoint(struct {
         .path = "/api/auth/keys",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         const Model = AuthModel.CreateAPIKey;
         const allocator = res.arena;
 
         const request: Model.Request = .{
-            .role = .user,
+            .role = req.body.permissions,
             .user_id = ctx.user_id.?,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch {
-            handleResponse(res, .internal_server_error, null);
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            switch (err) {
+                Model.Errors.MissingPermissions => handleResponse(res, .forbidden, "You cannot create an API key with permissions that you do not have access to!"),
+                else => handleResponse(res, .internal_server_error, null),
+            }
             return;
         };
         defer response.deinit(res.arena);
