@@ -25,6 +25,28 @@ secret_hash bytea NOT NULL,
 permissions auth.user_role NOT NULL
 ) ;
 
+-- when a user's role changes, cull all of their old highly privileged roles
+-- if they happen to get demoted.
+
+-- +goose StatementBegin
+CREATE FUNCTION auth.on_user_role_change ()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.role IS DISTINCT FROM NEW.role AND NEW.role < OLD.role THEN
+        DELETE FROM auth.api_keys
+        WHERE user_id = NEW.id 
+          AND permissions > NEW.role;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql ;
+-- +goose StatementEnd
+
+CREATE TRIGGER trg_cleanup_api_keys
+AFTER UPDATE OF role ON auth.users
+FOR EACH ROW
+EXECUTE FUNCTION auth.on_user_role_change () ;
+
 -- content schema, includes media such as movies, manga, etc.
 CREATE SCHEMA content ;
 

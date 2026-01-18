@@ -677,6 +677,74 @@ test "Model | Auth | Create API Key with incorrect permissions" {
     }
 }
 
+/// WARNING: This does NOT validate if the request is valid. This can be used by a non-authorized user to promote themselves to the any role.
+/// Caller is responsible for handling authorization.
+///
+/// The database will handle culling of now invalid API keys.
+/// If a user gets demoted from Admin -> User, all of their Admin scoped keys are invalidated.
+pub const EditUserRole = struct {
+    pub const Request = struct {
+        target_user_id: []const u8,
+        role: Roles,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+        display_name: []const u8,
+        username: []const u8,
+        role: Roles,
+
+        pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.display_name);
+            allocator.free(self.username);
+        }
+    };
+
+    pub const Errors = error{
+        UserNotFound,
+        CannotUpdate,
+        CannotParseID,
+        OutOfMemory,
+        CannotAcquireConnection,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+
+        var row = conn.row(query_string, .{ request.target_user_id, request.role }) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotUpdate;
+        } orelse return error.UserNotFound;
+
+        defer row.deinit() catch {};
+
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
+        const display_name = allocator.dupe(u8, row.get([]u8, 1)) catch return error.OutOfMemory;
+        const username = allocator.dupe(u8, row.get([]u8, 2)) catch return error.OutOfMemory;
+        const role = row.get(Roles, 3);
+
+        return Response{
+            .id = id,
+            .display_name = display_name,
+            .username = username,
+            .role = role,
+        };
+    }
+
+    const query_string =
+        \\UPDATE auth.users 
+        \\SET role = $2
+        \\WHERE id = $1
+        \\RETURNING id, display_name, username, role
+    ;
+};
+
 const Tests = @import("../../tests/setup.zig");
 const TestSetup = Tests.TestSetup;
 

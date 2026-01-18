@@ -5,6 +5,7 @@ const Endpoints = EndpointGroup(.{
     Login,
     CreateAPIKey,
     Refresh,
+    EditUserRole,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
@@ -201,6 +202,53 @@ const Refresh = Endpoint(struct {
             .access_token = response.access_token,
             .refresh_token = response.refresh_token,
             .expires_in = response.expires_in,
+        }, .{});
+    }
+});
+
+const EditUserRole = Endpoint(struct {
+    const Body = struct {
+        target_user_id: []const u8,
+        role: AuthModel.Roles,
+    };
+    const Response = struct {
+        id: []const u8,
+        display_name: []const u8,
+        username: []const u8,
+        role: AuthModel.Roles,
+    };
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Body = Body,
+        },
+        .Response = Response,
+        .method = .PATCH,
+        .route_data = .{
+            .admin = true,
+        },
+        .path = "/api/auth/users/",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = AuthModel.EditUserRole;
+        const request = Model.Request{
+            .target_user_id = req.body.target_user_id,
+            .role = req.body.role,
+        };
+        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("EditUserRole model failed! {}\n", .{err});
+            handleResponse(res, .internal_server_error, "Couldn't create user!");
+            return;
+        };
+        defer response.deinit(allocator);
+
+        res.status = 200;
+        try res.json(Response{
+            .id = response.id,
+            .display_name = response.display_name,
+            .username = response.username,
+            .role = response.role,
         }, .{});
     }
 });
