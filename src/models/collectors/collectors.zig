@@ -38,6 +38,78 @@ pub const Create = struct {
     ;
 };
 
+pub const GetNotCompleted = struct {
+    pub const Request = struct {
+        provider: []const u8,
+        limit: i32 = 1_000,
+    };
+
+    pub const Response = []u8;
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    /// Caller must free slice and contents.
+    pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors![]Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.provider,
+                request.limit,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_handler = ErrorHandler{ .conn = conn };
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        const DatabaseResponse = struct {
+            external_id: []u8,
+        };
+        var mapper = query.mapper(DatabaseResponse, .{ .allocator = allocator });
+
+        var id_list: std.ArrayList([]u8) = .empty;
+        errdefer {
+            for (id_list.items) |id| allocator.free(id);
+            id_list.deinit(allocator);
+        }
+
+        while (mapper.next() catch return error.CannotGet) |response| {
+            id_list.append(allocator, response.external_id) catch return error.OutOfMemory;
+        }
+
+        return id_list.toOwnedSlice(allocator);
+    }
+
+    // WARN: this query is not guaranteed to be deterministic
+    const query_string =
+        \\ UPDATE collectors.list
+        \\ SET status = 'pending', updated_at = now()
+        \\ WHERE (provider,external_id) IN (
+        \\ SELECT provider,external_id
+        \\ FROM collectors.list
+        \\ WHERE provider = $1
+        \\ AND status = 'todo'
+        \\ ORDER BY created_at ASC
+        \\ LIMIT $2
+        \\ FOR UPDATE SKIP LOCKED
+        \\ )
+        \\ RETURNING external_id;
+    ;
+};
+
 const MediaType = @import("../content/content.zig").MediaType;
 
 const Conn = @import("pg").Conn;

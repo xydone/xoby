@@ -93,11 +93,15 @@ WHERE last_synced_at IS NULL ;
 
 CREATE SCHEMA collectors ;
 
+CREATE TYPE collectors.status AS ENUM ('completed', 'pending', 'todo') ;
+
 CREATE TABLE collectors.list (
 provider TEXT NOT NULL,
 external_id TEXT NOT NULL,
 media_type content.media_type NOT NULL,
-created_at TIMESTAMPTZ DEFAULT now (),
+created_at TIMESTAMPTZ DEFAULT now () NOT NULL,
+updated_at TIMESTAMPTZ DEFAULT now () NOT NULL,
+status collectors.status DEFAULT 'todo' NOT NULL,
 PRIMARY KEY (provider, external_id)
 ) ;
 
