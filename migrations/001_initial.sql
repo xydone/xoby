@@ -4,13 +4,16 @@ SELECT 'up SQL query';
 -- auth schema
 CREATE SCHEMA auth;
 
+CREATE TYPE auth.user_role AS ENUM ('user', 'admin') ;
+
 CREATE TABLE auth.users (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    display_name character varying(255) NOT NULL,
-    username character varying(255) NOT NULL,
-    password character varying(255) NOT NULL
-);
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
+created_at timestamp without time zone DEFAULT now () NOT NULL,
+display_name character varying (255) NOT NULL,
+username character varying (255) NOT NULL,
+password character varying (255) NOT NULL,
+role auth.user_role DEFAULT 'user' NOT NULL
+) ;
 
 
 CREATE TABLE auth.api_keys (
@@ -18,7 +21,8 @@ id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
 created_at timestamp without time zone DEFAULT now () NOT NULL,
 user_id uuid NOT NULL,
 public_id character varying (20) NOT NULL,
-secret_hash bytea NOT NULL
+secret_hash bytea NOT NULL,
+permissions auth.user_role NOT NULL
 ) ;
 
 -- content schema, includes media such as movies, manga, etc.

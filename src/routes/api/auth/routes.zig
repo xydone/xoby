@@ -132,7 +132,12 @@ const CreateAPIKey = Endpoint(struct {
         const Model = AuthModel.CreateAPIKey;
         const allocator = res.arena;
 
-        const response = Model.call(allocator, ctx.database_pool, ctx.user_id.?) catch {
+        const request: Model.Request = .{
+            .role = .user,
+            .user_id = ctx.user_id.?,
+        };
+
+        const response = Model.call(allocator, ctx.database_pool, request) catch {
             handleResponse(res, .internal_server_error, null);
             return;
         };

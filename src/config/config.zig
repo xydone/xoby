@@ -61,6 +61,7 @@ const ConfigFile = struct {
     jwt_secret: ?[]const u8,
     assets_dir: ?[]const u8,
     collectors: Collectors,
+    env_file_dir: ?[]const u8,
 };
 
 pub const InitErrors = error{
@@ -79,7 +80,10 @@ pub fn init(allocator: Allocator) InitErrors!Config {
     };
     defer zon.parse.free(allocator, config_file);
 
-    const env = Env.init(allocator) catch |err| {
+    const env_file_dir = if (config_file.env_file_dir) |dir| allocator.dupe(u8, dir) catch return error.OutOfMemory else std.fs.cwd().realpathAlloc(allocator, ".") catch return error.OutOfMemory;
+    defer allocator.free(env_file_dir);
+
+    const env = Env.init(allocator, env_file_dir) catch |err| {
         log.err("env failed with {}", .{err});
         return error.CouldntReadEnv;
     };

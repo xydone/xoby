@@ -1,5 +1,13 @@
 const log = std.log.scoped(.auth_model);
 
+pub const Roles = enum { user, admin };
+
+/// what is stored on redis
+const UserSession = struct {
+    id: []const u8,
+    role: Roles,
+};
+
 const ACCESS_TOKEN_EXPIRY = 15 * 60;
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60;
 
@@ -132,15 +140,30 @@ pub const CreateToken = struct {
         defer props.allocator.free(id);
 
         const hash = row.get([]u8, 1);
+
+        const role = row.get(Roles, 2);
+
         const isValidPassword = verifyPassword(props.allocator, hash, request.password) catch return error.CannotCreate;
-        const claims = JWTClaims{ .user_id = id, .exp = generateAccessTokenExpiry() };
+        const claims = JWTClaims{
+            .user_id = id,
+            .exp = generateAccessTokenExpiry(),
+            .role = role,
+        };
 
         if (!isValidPassword) return error.InvalidPassword;
         const access_token = createJWT(props.allocator, claims, props.jwt_secret) catch return error.CannotCreate;
 
         const refresh_token = createSessionToken(props.allocator) catch return error.CannotCreate;
 
-        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, id, REFRESH_TOKEN_EXPIRY) catch return error.RedisError;
+        const session: UserSession = .{
+            .id = id,
+            .role = role,
+        };
+
+        const value_string = jsonStringify(props.allocator, session) catch return error.OutOfMemory;
+        defer props.allocator.free(value_string);
+
+        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, value_string, REFRESH_TOKEN_EXPIRY) catch return error.RedisError;
         defer props.allocator.free(response);
 
         return Response{
@@ -150,7 +173,7 @@ pub const CreateToken = struct {
         };
     }
 
-    const query_string = "SELECT id, password FROM auth.users WHERE username=$1;";
+    const query_string = "SELECT id, password, role FROM auth.users WHERE username=$1;";
 };
 
 pub const RefreshToken = struct {
@@ -173,13 +196,22 @@ pub const RefreshToken = struct {
         OutOfMemory,
     };
     pub fn call(allocator: std.mem.Allocator, redis_client: *redis.Client, refresh_token: []const u8, jwt_secret: []const u8) Errors!Response {
-        const id = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
+        const value = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
             error.KeyValuePairNotFound => return error.UserNotFound,
             else => return error.RedisError,
         };
-        defer allocator.free(id);
+        defer allocator.free(value);
 
-        const claims = JWTClaims{ .user_id = id, .exp = generateAccessTokenExpiry() };
+        const parsed_session: std.json.Parsed(UserSession) = std.json.parseFromSlice(UserSession, allocator, value, .{}) catch return error.ParseError;
+        defer parsed_session.deinit();
+
+        const session = parsed_session.value;
+
+        const claims = JWTClaims{
+            .user_id = session.id,
+            .exp = generateAccessTokenExpiry(),
+            .role = session.role,
+        };
 
         const access_token = createJWT(allocator, claims, jwt_secret) catch return error.CannotCreateJWT;
 
@@ -207,6 +239,10 @@ pub const InvalidateToken = struct {
 
 // NOTE: currently this does not handle a potential collision and just errors. This *should* be unlikely though.
 pub const CreateAPIKey = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+        role: Roles,
+    };
     pub const Response = struct {
         api_key: []const u8,
 
@@ -215,8 +251,12 @@ pub const CreateAPIKey = struct {
         }
     };
 
-    pub const Errors = error{ CannotCreate, UserNotFound } || DatabaseErrors;
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, user_id: []const u8) Errors!Response {
+    pub const Errors = error{
+        CannotCreate,
+        UserNotFound,
+        MissingPermissions,
+    } || DatabaseErrors;
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
         var conn = database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
@@ -226,10 +266,16 @@ pub const CreateAPIKey = struct {
             allocator.free(api_key_response.public_id);
             allocator.free(api_key_response.secret_hash);
         }
+        errdefer allocator.free(api_key_response.full_key);
 
-        _ = conn.exec(
+        const rows = conn.exec(
             query_string,
-            .{ user_id, api_key_response.public_id, api_key_response.secret_hash },
+            .{
+                request.user_id,
+                request.role,
+                api_key_response.public_id,
+                api_key_response.secret_hash,
+            },
         ) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
@@ -237,20 +283,34 @@ pub const CreateAPIKey = struct {
             }
 
             return error.CannotCreate;
-        };
+        } orelse return error.CannotCreate;
+
+        if (rows == 0) {
+            return error.MissingPermissions;
+        }
 
         return .{
             .api_key = api_key_response.full_key,
         };
     }
     const query_string =
-        \\INSERT INTO auth.api_keys (user_id, public_id, secret_hash)
-        \\VALUES ($1, $2, $3);
+        \\ INSERT INTO auth.api_keys (user_id, permissions, public_id, secret_hash)
+        \\ SELECT p.id, $2, $3, $4
+        \\ FROM auth.users p
+        \\ WHERE p.id = $1 
+        \\ AND p.role >= $2;
     ;
 };
 
 pub const GetUserByAPIKey = struct {
-    pub const Response = []const u8;
+    pub const Response = struct {
+        id: []const u8,
+        permissions: Roles,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.id);
+        }
+    };
     pub const Errors = error{
         OutOfMemory,
         CannotGet,
@@ -281,17 +341,25 @@ pub const GetUserByAPIKey = struct {
         } orelse return error.UserNotFound;
         defer row.deinit() catch {};
 
-        const response = row.to(struct { user_id: []u8, secret_hash: []u8 }, .{}) catch return error.CannotGet;
+        const response = row.to(struct {
+            user_id: []u8,
+            secret_hash: []u8,
+            permissions: Roles,
+        }, .{}) catch return error.CannotGet;
         std.debug.assert(response.secret_hash.len == 32);
         const hash = response.secret_hash[0..32].*;
 
         if (!verifyAPIKey(hash, secret)) return error.CannotGet;
 
         const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
-        return id;
+
+        return .{
+            .id = id,
+            .permissions = response.permissions,
+        };
     }
     const query_string =
-        \\SELECT user_id, secret_hash
+        \\SELECT user_id, secret_hash,permissions 
         \\FROM auth.api_keys
         \\WHERE public_id = $1;
     ;
@@ -557,7 +625,54 @@ test "Model | Auth | Create API Key" {
 
     // TEST
     {
-        const response = try CreateAPIKey.call(allocator, test_env.database_pool, setup.user.id);
+        const request: CreateAPIKey.Request = .{
+            .user_id = setup.user.id,
+            .role = .user,
+        };
+        const response = try CreateAPIKey.call(allocator, test_env.database_pool, request);
+        defer response.deinit(allocator);
+    }
+}
+
+test "Model | Auth | Create API Key with incorrect permissions" {
+    //SETUP
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Auth | Create API Key with incorrect permissions";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const password = try std.fmt.allocPrint(allocator, "Testing password", .{});
+    defer allocator.free(password);
+    const jwt_secret = test_env.config.jwt_secret;
+    const props = CreateToken.Props{
+        .allocator = allocator,
+        .database_pool = test_env.database_pool,
+        .jwt_secret = jwt_secret,
+        .redis_client = test_env.redis_client,
+    };
+    var create = try CreateToken.call(props, .{
+        .username = test_name,
+        .password = password,
+    });
+    defer create.deinit(allocator);
+
+    const access_token = try allocator.dupe(u8, create.access_token);
+    defer allocator.free(access_token);
+    const refresh_token = try allocator.dupe(u8, create.refresh_token);
+    defer allocator.free(refresh_token);
+
+    // TEST
+    {
+        const request: CreateAPIKey.Request = .{
+            .user_id = setup.user.id,
+            .role = .admin,
+        };
+        const response = CreateAPIKey.call(allocator, test_env.database_pool, request) catch |err| {
+            try std.testing.expectEqual(CreateAPIKey.Errors.MissingPermissions, err);
+            return;
+        };
         defer response.deinit(allocator);
     }
 }
@@ -575,6 +690,8 @@ const Handler = @import("../../handler.zig");
 const UUID = @import("../../util/uuid.zig");
 const JWTClaims = @import("../../auth/tokens.zig").JWTClaims;
 
+const jsonStringify = @import("../../util/jsonStringify.zig").jsonStringify;
+
 const verifyPassword = @import("../../auth/password.zig").verifyPassword;
 const hashPassword = @import("../../auth/password.zig").hashPassword;
 const createJWT = @import("../../auth/tokens.zig").createJWT;
@@ -582,4 +699,5 @@ const createSessionToken = @import("../../auth/tokens.zig").createSessionToken;
 const createAPIKey = @import("../../auth/api_keys.zig").create;
 const verifyAPIKey = @import("../../auth/api_keys.zig").verify;
 
+const Allocator = std.mem.Allocator;
 const std = @import("std");

@@ -22,6 +22,7 @@ pub const RouteData = struct {
 /// The difference between RequestContext and Handler is that the RequestContext can contain information that is provided by the dispatch function and middleware.
 pub const RequestContext = struct {
     user_id: ?[]const u8,
+    user_role: ?Roles,
     refresh_token: ?[]const u8,
     database_pool: *Database.Pool,
     redis_client: *redis.Client,
@@ -35,6 +36,7 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
     var ctx = RequestContext{
         .user_id = null,
         .refresh_token = null,
+        .user_role = null,
         .database_pool = self.database_pool,
         .redis_client = self.redis_client,
         .config = self.config,
@@ -77,22 +79,46 @@ fn authenticateRequest(allocator: Allocator, ctx: *RequestContext, req: *httpz.R
         const access_token = req.header("authorization");
 
         if (route_data.signed_in) {
-            if (api_key) |key| {
-                verifyAPIKey(allocator, ctx, key) catch {
-                    try handleRejection(res);
-                };
-            } else if (access_token) |token| {
-                verifyJWT(allocator, ctx, token) catch {
-                    try handleRejection(res);
-                };
-            } else try handleRejection(res);
+            const is_valid = verifyAllKeys(allocator, ctx, .{
+                .access_token = access_token,
+                .api_key = api_key,
+            });
+            if (is_valid == false) try handleRejection(res);
         }
         if (route_data.refresh) {
             verifyRefresh(allocator, ctx, req) catch {
                 try handleRejection(res);
             };
         }
+        if (route_data.admin) {
+            const is_valid = verifyAllKeys(allocator, ctx, .{
+                .access_token = access_token,
+                .api_key = api_key,
+            });
+
+            if (is_valid == false) try handleRejection(res);
+
+            if (ctx.user_role.? != .admin) try handleRejection(res);
+        }
     }
+}
+
+const AllKeys = struct {
+    api_key: ?[]const u8,
+    access_token: ?[]const u8,
+};
+
+fn verifyAllKeys(allocator: Allocator, ctx: *RequestContext, all_keys: AllKeys) bool {
+    if (all_keys.api_key) |key| {
+        verifyAPIKey(allocator, ctx, key) catch {
+            return false;
+        };
+    } else if (all_keys.access_token) |token| {
+        verifyJWT(allocator, ctx, token) catch {
+            return false;
+        };
+    } else return false;
+    return true;
 }
 
 fn verifyJWT(allocator: std.mem.Allocator, ctx: *RequestContext, access_token: []const u8) error{ InvalidJWT, InvalidToken }!void {
@@ -119,9 +145,10 @@ fn verifyJWT(allocator: std.mem.Allocator, ctx: *RequestContext, access_token: [
 }
 
 fn verifyAPIKey(allocator: Allocator, ctx: *RequestContext, api_key: []const u8) error{CannotGet}!void {
-    const GetUserByAPIKey = @import("models/auth/auth.zig").GetUserByAPIKey;
-    const id = GetUserByAPIKey.call(allocator, ctx.database_pool, api_key) catch return error.CannotGet;
-    ctx.user_id = id;
+    const GetUserByAPIKey = AuthModel.GetUserByAPIKey;
+    const response = GetUserByAPIKey.call(allocator, ctx.database_pool, api_key) catch return error.CannotGet;
+    ctx.user_id = response.id;
+    ctx.user_role = response.permissions;
 }
 
 fn verifyRefresh(allocator: Allocator, ctx: *RequestContext, req: *httpz.Request) error{ MissingBody, InvalidBodyJSON }!void {
@@ -222,6 +249,9 @@ pub fn handleResponse(httpz_res: *httpz.Response, response_error: ResponseError,
     httpz_res.json(response, .{ .emit_null_optional_fields = false }) catch @panic("Couldn't parse error response.");
     return;
 }
+
+const Roles = AuthModel.Roles;
+const AuthModel = @import("models/auth/auth.zig");
 
 const redis = @import("redis.zig");
 const Database = @import("database.zig");

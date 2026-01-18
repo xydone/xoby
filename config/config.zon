@@ -14,6 +14,10 @@
     // Absolute path to the folder where assets, such as cover arts, are stored.
     .assets_dir = null,
 
+    // Absolute path where your .env files are stored.
+    // If null, it will refer to the current working directory.
+    .env_file_dir = null,
+
     // List of metadata collectors
     .collectors = .{
         // The Movie Database

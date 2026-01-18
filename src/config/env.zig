@@ -10,9 +10,12 @@ REDIS_PORT: u16,
 const log = std.log.scoped(.env);
 const Env = @This();
 
-pub fn init(allocator: Allocator) !Env {
+pub fn init(allocator: Allocator, dir: []const u8) !Env {
     const file_name = if (!builtin.is_test) ".env" else ".testing.env";
-    var env_file = Dotenv.init(allocator, file_name) catch return error.OutOfMemory;
+    const path = try std.fs.path.join(allocator, &.{ dir, file_name });
+    defer allocator.free(path);
+
+    var env_file = Dotenv.init(allocator, path) catch return error.OutOfMemory;
     defer env_file.deinit();
 
     var env: Env = undefined;
@@ -59,11 +62,11 @@ pub fn deinit(self: Env, allocator: Allocator) void {
 pub const Dotenv = struct {
     map: std.process.EnvMap = undefined,
 
-    pub fn init(allocator: Allocator, filename: ?[]const u8) !Dotenv {
+    pub fn init(allocator: Allocator, path: ?[]const u8) !Dotenv {
         var map = try std.process.getEnvMap(allocator);
 
-        if (filename) |f| {
-            var file = std.fs.cwd().openFile(f, .{}) catch {
+        if (path) |p| {
+            var file = std.fs.openFileAbsolute(p, .{}) catch {
                 return .{ .map = map };
             };
             defer file.close();
