@@ -36,10 +36,13 @@ pub const Collectors = struct {
 
     pub const TMDB = struct {
         enable: bool,
+        api_key: ?[]const u8,
         indexer_path: ?[]const u8,
+        requests_per_second: u32,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
             if (self.indexer_path) |p| allocator.free(p);
+            if (self.api_key) |key| allocator.free(key);
         }
     };
 
@@ -132,6 +135,17 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                         return error.RequiredNullableFieldMissing;
                     }
                 },
+                .api_key = blk: {
+                    if (config_file.collectors.tmdb.enable == false) break :blk null;
+
+                    if (config_file.collectors.tmdb.api_key) |key| {
+                        break :blk allocator.dupe(u8, key) catch return error.OutOfMemory;
+                    } else {
+                        log.warn("Collector \"TMDB\" is enabled, but api_key is missing. This will cause requests that require the API key to fail. It will not interfere with the other parts of the collector.", .{});
+                        break :blk null;
+                    }
+                },
+                .requests_per_second = config_file.collectors.tmdb.requests_per_second,
             },
         },
     };

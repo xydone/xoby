@@ -4,9 +4,17 @@ pub fn fetch(
     allocator: Allocator,
     database: *Database,
     config: Config,
+    user_id: []const u8,
 ) !void {
-    if (config.collectors.tmdb.enable) {
-        TMDB.fetch(allocator, database) catch |err| {
+    if (config.collectors.tmdb.enable) blk: {
+        const api_key = if (config.collectors.tmdb.api_key) |key| key else break :blk;
+        TMDB.fetch(
+            allocator,
+            database,
+            user_id,
+            api_key,
+            config.collectors.tmdb.requests_per_second,
+        ) catch |err| {
             log.err("TMDB failed! {}", .{err});
         };
     }

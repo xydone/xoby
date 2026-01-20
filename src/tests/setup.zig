@@ -104,8 +104,9 @@ pub const TestSetup = struct {
 };
 
 pub const RequestContext = struct {
-    pub fn init(config: Config, user_id: ?[]const u8) !Handler.RequestContext {
+    pub fn init(allocator: Allocator, config: Config, user_id: ?[]const u8) !Handler.RequestContext {
         return Handler.RequestContext{
+            .allocator = allocator,
             .user_id = user_id,
             .user_role = null,
             .refresh_token = null,

@@ -26,10 +26,18 @@
             // Whether or not to enable the collector.
             // Further configurations will not be refered to by Xoby if this is false.
             .enable = false,
+            // The API key to access the TMDB data.
+            // Requires a TMDB account. When signed in, head over to https://www.themoviedb.org/settings/api and apply for a key.
+            // WARN: Hosters must ensure they are in compliance with the TMDB’s Terms of Service.
+            // It is your responsibility to verify permitted use cases.
+            // https://www.themoviedb.org/api-terms-of-use
+            .api_key = null,
             // Where should the server look for index files
             // Index files are the files which contain all movie ids
             // https://developer.themoviedb.org/docs/daily-id-exports#example
             .indexer_path = null,
+            // How many requests to send per second when fetching
+            .requests_per_second = 20,
         },
     },
 }

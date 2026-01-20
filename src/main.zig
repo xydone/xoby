@@ -1,17 +1,20 @@
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+var debug_allocator: std.heap.DebugAllocator(.{
+    .thread_safe = true,
+}) = .init;
 const log = std.log.scoped(.main);
 
 pub fn main() !void {
-    const allocator, const is_debug = gpa: {
-        break :gpa switch (builtin.mode) {
-            .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
-            .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
-        };
-    };
-
-    defer if (is_debug) {
-        _ = debug_allocator.deinit();
-    };
+    // const allocator, const is_debug = gpa: {
+    //     break :gpa switch (builtin.mode) {
+    //         .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
+    //         .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
+    //     };
+    // };
+    //
+    // defer if (is_debug) {
+    //     _ = debug_allocator.deinit();
+    // };
+    const allocator = std.heap.c_allocator;
 
     var config = try Config.init(allocator);
     defer config.deinit(allocator);
@@ -23,6 +26,7 @@ pub fn main() !void {
     defer redis_client.deinit();
 
     var handler = Handler{
+        .allocator = allocator,
         .database_pool = database,
         .config = config,
         .redis_client = &redis_client,

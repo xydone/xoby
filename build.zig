@@ -11,6 +11,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
+        .sanitize_c = .full,
+        .sanitize_thread = true,
     });
 
     const openapi_module = b.createModule(.{
@@ -46,6 +49,9 @@ pub fn build(b: *std.Build) void {
     });
     module.addImport("jwt", jwt.module("jwt"));
     openapi_module.addImport("jwt", jwt.module("jwt"));
+
+    const dep_curl = b.dependency("curl", .{});
+    module.addImport("curl", dep_curl.module("curl"));
 
     const exe = b.addExecutable(.{
         .name = NAME,

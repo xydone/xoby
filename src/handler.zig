@@ -1,6 +1,10 @@
 database_pool: *Database.Pool,
 redis_client: *redis.Client,
 config: Config,
+/// shouldn't be used unless necessary.
+/// meant for resources that will outlive the response/request arena
+allocator: Allocator,
+
 /// Handler is initalized with data, available at handler instantiation, at the main entry point of the program.
 const Handler = @This();
 
@@ -21,6 +25,9 @@ pub const RouteData = struct {
 /// This will be passed to every request, should include things that would be needed inside a request but cannot/shouldn't be initialized every time.
 /// The difference between RequestContext and Handler is that the RequestContext can contain information that is provided by the dispatch function and middleware.
 pub const RequestContext = struct {
+    /// shouldn't be used unless necessary.
+    /// meant for resources that will outlive the response/request arena
+    allocator: Allocator,
     user_id: ?[]const u8,
     user_role: ?Roles,
     refresh_token: ?[]const u8,
@@ -34,6 +41,7 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
     var timer = try std.time.Timer.start();
 
     var ctx = RequestContext{
+        .allocator = self.allocator,
         .user_id = null,
         .refresh_token = null,
         .user_role = null,

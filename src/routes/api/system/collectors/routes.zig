@@ -22,7 +22,7 @@ const Index = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
-        const allocator = res.arena;
+        const allocator = ctx.allocator;
         Collectors.Indexers.fetch(allocator, ctx.database_pool, ctx.config) catch |err| {
             log.err("Refetching indexers failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
@@ -46,8 +46,8 @@ const Fetch = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
-        const allocator = res.arena;
-        Collectors.Fetchers.fetch(allocator, ctx.database_pool, ctx.config) catch |err| {
+        const allocator = ctx.allocator;
+        Collectors.Fetchers.fetch(allocator, ctx.database_pool, ctx.config, ctx.user_id.?) catch |err| {
             log.err("Fetching failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;

@@ -6,7 +6,6 @@
 
     .minimum_zig_version = "0.15.2",
 
-    // update the dependencies with whatever version you want
     .dependencies = .{
         .httpz = .{
             .url = "git+https://github.com/karlseguin/http.zig?ref=master#1c0ec3751c53e276d5e0c42b6d5481e72d9d1971",
@@ -23,6 +22,10 @@
         .jwt = .{
             .url = "git+https://github.com/Gnyblast/zig-jwt#a142d6ca872e765cf2e062128656acbfa92dfbac",
             .hash = "jwt-0.1.0-NpgsfuymAAApYfFmGeu9oEto38u33YL-XNwAFMwDf0ua",
+        },
+        .curl = .{
+            .url = "git+https://github.com/jiacai2050/zig-curl#92db14ccdf58ee853c31564f3bdca265e3fc7dfe",
+            .hash = "curl-0.3.2-P4tT4XHoAAAN71krRGKGqMAi1tlwRi6dY5t8dDJWowJp",
         },
     },
 
