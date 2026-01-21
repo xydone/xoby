@@ -26,9 +26,10 @@ const SharedState = struct {
     mutex: std.Thread.Mutex = .{},
     wg: std.Thread.WaitGroup = .{},
     data_list: std.ArrayList(Data),
+    backoff: std.atomic.Value(i64) = .init(0),
 
     fn flushLocked(self: *SharedState) !void {
-        log.debug("flushing locked", .{});
+        log.debug("Making database call due to flush.", .{});
         if (self.data_list.items.len == 0) return;
 
         const batch_to_save = self.data_list;
@@ -39,6 +40,16 @@ const SharedState = struct {
             self.wg.finish();
             return err;
         };
+    }
+    fn checkBackoff(self: *SharedState) void {
+        while (true) {
+            const now = std.time.milliTimestamp();
+            const wait_until = self.backoff.load(.monotonic);
+            if (now >= wait_until) break;
+
+            const diff = wait_until - now;
+            std.Thread.sleep(@intCast(diff * std.time.ns_per_ms));
+        }
     }
     fn deinit(self: *SharedState) void {
         self.wg.wait();
@@ -103,19 +114,23 @@ const HandlePool = struct {
     }
 };
 
+pub const Response = struct {
+    total_amount: i64,
+};
+
 pub fn fetch(
     allocator: Allocator,
     database: *Database,
     user_id: []const u8,
     api_key: []const u8,
     requests_per_second: u32,
-) !void {
+) !Response {
     const state = try allocator.create(SharedState);
 
     const headers = try std.fmt.allocPrintSentinel(allocator, "Authorization: Bearer {s}", .{api_key}, 0);
 
     const ca_bundle = try allocator.create(std.array_list.Managed(u8));
-    ca_bundle.* = curl.allocCABundle(allocator) catch return;
+    ca_bundle.* = try curl.allocCABundle(allocator);
 
     const handle_pool = try HandlePool.init(allocator, 10, ca_bundle.*);
     state.* = SharedState{
@@ -135,6 +150,8 @@ pub fn fetch(
         .n_jobs = 10,
     });
 
+    const total_amount = try GetNotCompletedCount.call(database, .{ .provider = "tmdb", .status = .todo });
+
     const thread = try std.Thread.spawn(
         .{ .allocator = allocator },
         spawnFetchThread,
@@ -143,6 +160,8 @@ pub fn fetch(
         },
     );
     thread.detach();
+
+    return .{ .total_amount = total_amount };
 }
 
 fn spawnFetchThread(state: *SharedState) void {
@@ -179,6 +198,7 @@ fn fetchImpl(state: *SharedState) !void {
         defer rate_limiter.deinit();
 
         for (id_list) |id| {
+            state.checkBackoff();
             const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
             if (wait_time > 0) std.Thread.sleep(@intCast(wait_time * std.time.ns_per_ms));
 
@@ -212,49 +232,74 @@ fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
     const easy = state.handle_pool.acquire() orelse @panic("no handles in pool");
     defer state.handle_pool.release(easy) catch |err| std.debug.panic("error releasing: {}", .{err});
 
-    var writer = std.Io.Writer.Allocating.init(state.allocator);
-    defer writer.deinit();
+    const max_retries = 5;
+    var attempt: u32 = 0;
 
-    log.debug("making request!", .{});
-    const resp = easy.fetch(
-        url,
-        .{
-            .headers = &.{headers},
-            .writer = &writer.writer,
-        },
-    ) catch return;
-    if (resp.status_code != 200) log.debug("status code: {}", .{resp.status_code});
-    if (resp.status_code == 429) std.debug.panic("received 429!", .{});
+    while (attempt < max_retries) : (attempt += 1) {
+        state.checkBackoff();
 
-    const response = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return;
-    defer response.deinit();
-    const title = state.allocator.dupe(u8, response.value.title) catch return;
+        var writer = std.Io.Writer.Allocating.init(state.allocator);
+        defer writer.deinit();
 
-    const release_date = state.allocator.dupe(u8, response.value.release_date) catch {
-        state.allocator.free(title);
+        const resp = easy.fetch(
+            url,
+            .{
+                .headers = &.{headers},
+                .writer = &writer.writer,
+            },
+        ) catch return;
+        if (resp.status_code != 200) log.debug("status code: {}", .{resp.status_code});
+        if (resp.status_code == 429) {
+            const base_delay: u64 = @as(u64, 1) << @intCast(attempt);
+            const delay_ms = base_delay * 1000;
+
+            const jitter = std.crypto.random.intRangeAtMost(u64, 0, 500);
+            const total_wait = delay_ms + jitter;
+
+            log.warn("429 received. Backing off for {}ms (Attempt {}/{})", .{ total_wait, attempt + 1, max_retries });
+
+            const new_wait_until = std.time.milliTimestamp() + @as(i64, @intCast(total_wait));
+
+            var current = state.backoff.load(.monotonic);
+            while (new_wait_until > current) {
+                current = state.backoff.cmpxchgStrong(current, new_wait_until, .monotonic, .monotonic) orelse break;
+            }
+        }
+
+        const response = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
+            .ignore_unknown_fields = true,
+            .allocate = .alloc_always,
+        }) catch return;
+        defer response.deinit();
+        const title = state.allocator.dupe(u8, response.value.title) catch return;
+
+        const release_date = state.allocator.dupe(u8, response.value.release_date) catch {
+            state.allocator.free(title);
+            return;
+        };
+
+        const runtime_minute: ?i64 = if (response.value.runtime == 0) null else @intCast(response.value.runtime);
+
+        state.mutex.lock();
+        defer state.mutex.unlock();
+
+        state.data_list.append(state.allocator, .{
+            .release_date = release_date,
+            .title = title,
+            .runtime_minutes = runtime_minute,
+        }) catch |err| {
+            log.err("failed to append! {}", .{err});
+            state.allocator.free(title);
+            state.allocator.free(release_date);
+        };
+        if (state.data_list.items.len >= BATCH_SIZE) {
+            state.flushLocked() catch |err| log.err("Batch flush failed! {}", .{err});
+        }
+
+        // if we are here, congratulations, the request went through
         return;
-    };
-
-    const runtime_minute: ?i64 = if (response.value.runtime == 0) null else @intCast(response.value.runtime);
-
-    state.mutex.lock();
-    defer state.mutex.unlock();
-
-    state.data_list.append(state.allocator, .{
-        .release_date = release_date,
-        .title = title,
-        .runtime_minutes = runtime_minute,
-    }) catch |err| {
-        log.err("failed to append! {}", .{err});
-        state.allocator.free(title);
-        state.allocator.free(release_date);
-    };
-    if (state.data_list.items.len >= BATCH_SIZE) {
-        state.flushLocked() catch |err| log.err("Batch flush failed! {}", .{err});
     }
+    log.err("Giving up on {s} after {} tries", .{ url, attempt });
 }
 
 fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
@@ -359,6 +404,7 @@ const RateLimiter = @import("../../rate_limiter.zig").RateLimiter;
 const curl = @import("curl");
 
 const GetNotCompleted = @import("../../models/collectors/collectors.zig").GetNotCompleted;
+const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").GetNotCompletedCount;
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
 const Database = @import("../../database.zig").Pool;
 

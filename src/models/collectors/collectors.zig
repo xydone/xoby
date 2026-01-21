@@ -1,4 +1,7 @@
 const log = std.log.scoped(.collectors_model);
+
+const Status = enum { completed, pending, todo };
+
 pub const Create = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -33,7 +36,7 @@ pub const Create = struct {
 
     const query_string =
         \\ INSERT INTO collectors.list (provider, external_id, media_type)
-        \\ SELECT $1, unnest($2::bigint[]), $3
+        \\ SELECT $1, unnest($2::bigint[]), $3::content.media_type
         \\ ON CONFLICT DO NOTHING
     ;
 };
@@ -93,7 +96,6 @@ pub const GetNotCompleted = struct {
         return id_list.toOwnedSlice(allocator);
     }
 
-    // WARN: this query is not guaranteed to be deterministic
     const query_string =
         \\ UPDATE collectors.list
         \\ SET status = 'pending', updated_at = now()
@@ -107,6 +109,53 @@ pub const GetNotCompleted = struct {
         \\ FOR UPDATE SKIP LOCKED
         \\ )
         \\ RETURNING external_id;
+    ;
+};
+
+pub const GetNotCompletedCount = struct {
+    pub const Request = struct {
+        provider: []const u8,
+        status: Status,
+    };
+
+    pub const Response = i64;
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+
+        var row = conn.row(
+            query_string,
+            .{
+                request.provider,
+                request.status,
+            },
+        ) catch |err| {
+            const error_handler = ErrorHandler{ .conn = conn };
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        } orelse return error.CannotGet;
+        defer row.deinit() catch {};
+
+        const amount = row.get(i64, 0);
+
+        return amount;
+    }
+
+    const query_string =
+        \\ SELECT count(*) AS total
+        \\ FROM collectors.list
+        \\ WHERE provider = $1
+        \\ AND status = $2;
     ;
 };
 

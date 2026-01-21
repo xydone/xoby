@@ -33,10 +33,17 @@ const Index = Endpoint(struct {
 });
 
 const Fetch = Endpoint(struct {
-    const Response = struct {};
+    const Body = struct {
+        collectors: []Collectors.Collector,
+    };
+    const Response = struct {
+        tmdb: ?Collectors.Fetchers.TMDB.Response = null,
+    };
 
     pub const endpoint_data: EndpointData = .{
-        .Request = .{},
+        .Request = .{
+            .Body = Body,
+        },
         .Response = Response,
         .method = .POST,
         .route_data = .{
@@ -45,14 +52,25 @@ const Fetch = Endpoint(struct {
         .path = "/api/system/collectors/fetch",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         const allocator = ctx.allocator;
-        Collectors.Fetchers.fetch(allocator, ctx.database_pool, ctx.config, ctx.user_id.?) catch |err| {
+        const fetch_response = Collectors.Fetchers.fetch(
+            allocator,
+            ctx.database_pool,
+            ctx.config,
+            ctx.user_id.?,
+            req.body.collectors,
+        ) catch |err| {
             log.err("Fetching failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
+        const response: Response = .{
+            .tmdb = fetch_response.tmdb,
+        };
+
         res.status = 200;
+        try res.json(response, .{});
     }
 });
 
