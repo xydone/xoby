@@ -53,6 +53,9 @@ pub fn main() !void {
         },
     );
 
+    try @import("curl").globalInit();
+    defer @import("curl").globalDeinit();
+
     API.init(router);
 
     log.info("Listening on http://{s}:{d}/", .{ config.address, config.port });

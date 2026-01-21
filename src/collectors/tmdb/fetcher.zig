@@ -21,6 +21,8 @@ const SharedState = struct {
     headers: [:0]u8,
     ca_bundle: *std.array_list.Managed(u8),
 
+    handle_pool: HandlePool,
+
     mutex: std.Thread.Mutex = .{},
     wg: std.Thread.WaitGroup = .{},
     data_list: std.ArrayList(Data),
@@ -33,7 +35,10 @@ const SharedState = struct {
         self.data_list = try std.ArrayList(Data).initCapacity(self.allocator, BATCH_SIZE);
 
         self.wg.start();
-        try self.pool.spawn(spawnModelThread, .{ self, batch_to_save });
+        self.pool.spawn(spawnModelThread, .{ self, batch_to_save }) catch |err| {
+            self.wg.finish();
+            return err;
+        };
     }
     fn deinit(self: *SharedState) void {
         self.wg.wait();
@@ -42,8 +47,59 @@ const SharedState = struct {
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
         self.ca_bundle.deinit();
+        self.handle_pool.deinit();
         self.allocator.destroy(self.ca_bundle);
         self.allocator.destroy(self);
+    }
+};
+
+const HandlePool = struct {
+    mutex: std.Thread.Mutex = .{},
+    handles: std.ArrayList(*curl.Easy),
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator, size: usize, ca_bundle: std.array_list.Managed(u8)) !HandlePool {
+        var handles = std.ArrayList(*curl.Easy).empty;
+        errdefer {
+            for (handles.items) |h| {
+                h.deinit();
+                allocator.destroy(h);
+            }
+            handles.deinit(allocator);
+        }
+
+        for (0..size) |_| {
+            const h = try allocator.create(curl.Easy);
+            h.* = try curl.Easy.init(.{ .ca_bundle = ca_bundle });
+            try handles.append(allocator, h);
+        }
+
+        return .{
+            .handles = handles,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *HandlePool) void {
+        for (self.handles.items) |h| {
+            h.deinit();
+            self.allocator.destroy(h);
+        }
+        self.handles.deinit(self.allocator);
+    }
+
+    fn acquire(self: *HandlePool) ?*curl.Easy {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.handles.pop();
+    }
+
+    fn release(self: *HandlePool, handle: *curl.Easy) !void {
+        handle.reset();
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.handles.append(self.allocator, handle);
     }
 };
 
@@ -61,11 +117,13 @@ pub fn fetch(
     const ca_bundle = try allocator.create(std.array_list.Managed(u8));
     ca_bundle.* = curl.allocCABundle(allocator) catch return;
 
+    const handle_pool = try HandlePool.init(allocator, 10, ca_bundle.*);
     state.* = SharedState{
         .allocator = allocator,
         .database = database,
         .user_id = try allocator.dupe(u8, user_id),
         .pool = undefined,
+        .handle_pool = handle_pool,
         .requests_per_second = requests_per_second,
         .data_list = try std.ArrayList(Data).initCapacity(allocator, BATCH_SIZE),
         .headers = headers,
@@ -151,11 +209,13 @@ fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
         state.allocator.free(url);
     }
 
-    const easy = curl.Easy.init(.{ .ca_bundle = state.ca_bundle.* }) catch return;
-    defer easy.deinit();
+    const easy = state.handle_pool.acquire() orelse @panic("no handles in pool");
+    defer state.handle_pool.release(easy) catch |err| std.debug.panic("error releasing: {}", .{err});
 
     var writer = std.Io.Writer.Allocating.init(state.allocator);
+    defer writer.deinit();
 
+    log.debug("making request!", .{});
     const resp = easy.fetch(
         url,
         .{
@@ -164,6 +224,7 @@ fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
         },
     ) catch return;
     if (resp.status_code != 200) log.debug("status code: {}", .{resp.status_code});
+    if (resp.status_code == 429) std.debug.panic("received 429!", .{});
 
     const response = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
         .ignore_unknown_fields = true,
@@ -200,8 +261,6 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
     defer state.wg.finish();
     defer {
         for (data.items) |item| {
-            state.allocator.free(item.title);
-            state.allocator.free(item.release_date);
             item.deinit(state.allocator);
         }
         var mutable_data = data;
