@@ -24,8 +24,8 @@
             .hash = "jwt-0.1.0-NpgsfuymAAApYfFmGeu9oEto38u33YL-XNwAFMwDf0ua",
         },
         .curl = .{
-            .url = "git+https://github.com/jiacai2050/zig-curl#92db14ccdf58ee853c31564f3bdca265e3fc7dfe",
-            .hash = "curl-0.3.2-P4tT4XHoAAAN71krRGKGqMAi1tlwRi6dY5t8dDJWowJp",
+            .url = "git+https://github.com/xydone/zig-curl#7565ca9a59777d1787633b23bc5f69a3d668ed06",
+            .hash = "curl-0.3.2-P4tT4e3oAABAAwtP-SFyKdUEsS5f4yxBlwuCfyed_a2z",
         },
     },
 

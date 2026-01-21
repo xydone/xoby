@@ -62,8 +62,8 @@ const SharedState = struct {
         self.data_list.deinit(self.allocator);
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
-        self.ca_bundle.deinit();
         self.handle_pool.deinit();
+        self.ca_bundle.deinit();
         self.allocator.destroy(self.ca_bundle);
         self.allocator.destroy(self);
     }
@@ -223,6 +223,7 @@ fn fetchImpl(state: *SharedState) !void {
         try state.flushLocked();
 
         state.mutex.unlock();
+        break;
     }
 }
 

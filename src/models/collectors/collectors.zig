@@ -81,7 +81,7 @@ pub const GetNotCompleted = struct {
         const DatabaseResponse = struct {
             external_id: []u8,
         };
-        var mapper = query.mapper(DatabaseResponse, .{ .allocator = allocator });
+        var mapper = query.mapper(DatabaseResponse, .{});
 
         var id_list: std.ArrayList([]u8) = .empty;
         errdefer {
@@ -90,7 +90,7 @@ pub const GetNotCompleted = struct {
         }
 
         while (mapper.next() catch return error.CannotGet) |response| {
-            id_list.append(allocator, response.external_id) catch return error.OutOfMemory;
+            id_list.append(allocator, allocator.dupe(u8, response.external_id) catch return error.OutOfMemory) catch return error.OutOfMemory;
         }
 
         return id_list.toOwnedSlice(allocator);
