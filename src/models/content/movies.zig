@@ -5,6 +5,7 @@ pub const Create = struct {
         user_id: []const u8,
         release_date: ?[]const u8,
         runtime_minutes: ?u64,
+        description: ?[]const u8,
     };
 
     pub const Response = struct {
@@ -32,6 +33,7 @@ pub const Create = struct {
             request.user_id,
             request.release_date,
             request.runtime_minutes,
+            request.description,
         }) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
@@ -53,8 +55,8 @@ pub const Create = struct {
 
     const query_string =
         \\ WITH new_media AS (
-        \\   INSERT INTO content.media_items (title, user_id, release_date, media_type)
-        \\   VALUES ($1, $2, $3::date, 'movie')
+        \\   INSERT INTO content.media_items (title, user_id, release_date, media_type, description)
+        \\   VALUES ($1, $2, $3::date, 'movie', $5)
         \\   RETURNING id, title
         \\ )
         \\ INSERT INTO content.movies (media_id, runtime_minutes)
@@ -69,6 +71,7 @@ pub const CreateMultiple = struct {
         user_id: []const u8,
         release_dates: [][]const u8,
         runtime_minutes: []?i64,
+        descriptions: []?[]const u8,
     };
 
     pub const Errors = error{
@@ -81,7 +84,7 @@ pub const CreateMultiple = struct {
         // make sure all are of equal length
         const len = request.titles.len;
         if (len == 0) return;
-        if (request.release_dates.len != len or request.runtime_minutes.len != len) {
+        if (request.release_dates.len != len or request.runtime_minutes.len != len or request.descriptions.len != len) {
             return error.MismatchedInputLengths;
         }
 
@@ -95,6 +98,7 @@ pub const CreateMultiple = struct {
             request.user_id,
             request.release_dates,
             request.runtime_minutes,
+            request.descriptions,
         }) catch |err| {
             if (error_handler.handle(err)) |data| {
                 ErrorHandler.printErr(data);
@@ -111,8 +115,8 @@ pub const CreateMultiple = struct {
         \\ val.title,
         \\ NULLIF(val.rel_date, '')::date AS release_date,
         \\ val.runtime::integer AS runtime
-        \\ FROM UNNEST($1::text[], $3::text[], $4::bigint[]) 
-        \\ AS val(title, rel_date, runtime)
+        \\ FROM UNNEST($1::text[], $3::text[], $4::bigint[],$5::text[]) 
+        \\ AS val(title, rel_date, runtime, description)
         \\ ),
         \\ inserted_media AS (
         \\ INSERT INTO content.media_items (id, user_id, title, release_date, media_type)

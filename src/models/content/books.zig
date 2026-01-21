@@ -4,6 +4,7 @@ pub const Create = struct {
         user_id: []const u8,
         release_date: ?[]const u8,
         page_count: ?i32,
+        description: ?[]const u8,
     };
 
     pub const Response = struct {
@@ -31,6 +32,7 @@ pub const Create = struct {
             request.user_id,
             request.release_date,
             request.page_count,
+            request.description,
         }) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
@@ -52,8 +54,8 @@ pub const Create = struct {
 
     const query_string =
         \\ WITH new_media AS (
-        \\   INSERT INTO content.media_items (title, user_id, release_date, media_type)
-        \\   VALUES ($1, $2, $3::date, 'book')
+        \\   INSERT INTO content.media_items (title, user_id, release_date, media_type, description)
+        \\   VALUES ($1, $2, $3::date, 'book', $5)
         \\   RETURNING id, title
         \\ )
         \\ INSERT INTO content.books (media_id, page_count)

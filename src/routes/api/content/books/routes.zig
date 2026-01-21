@@ -13,6 +13,7 @@ const Create = Endpoint(struct {
         release_date: ?[]const u8 = null,
         page_count: ?i32 = null,
         publisher: ?[]const u8 = null,
+        description: ?[]const u8 = null,
     };
 
     const Response = struct {
@@ -41,6 +42,7 @@ const Create = Endpoint(struct {
             .user_id = ctx.user_id.?,
             .release_date = req.body.release_date,
             .page_count = req.body.page_count,
+            .description = req.body.description,
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {

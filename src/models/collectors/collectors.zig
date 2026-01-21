@@ -159,6 +159,52 @@ pub const GetNotCompletedCount = struct {
     ;
 };
 
+pub const EditStatus = struct {
+    pub const Request = struct {
+        provider: []const u8,
+        external_id: [][]const u8,
+        status: Status,
+    };
+
+    pub const Response = void;
+
+    pub const Errors = error{
+        CannotUpdate,
+        OutOfMemory,
+    } || DatabaseErrors;
+
+    pub fn call(database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+
+        _ = conn.exec(
+            query_string,
+            .{
+                request.provider,
+                request.external_id,
+                request.status,
+            },
+        ) catch |err| {
+            const error_handler = ErrorHandler{ .conn = conn };
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotUpdate;
+        } orelse return error.CannotUpdate;
+    }
+
+    const query_string =
+        \\ UPDATE collectors.list
+        \\ SET 
+        \\ status = $3,
+        \\ updated_at = now()
+        \\ WHERE 
+        \\ provider = $1 
+        \\ AND external_id = ANY($2::text[]);
+    ;
+};
+
 const MediaType = @import("../content/content.zig").MediaType;
 
 const Conn = @import("pg").Conn;

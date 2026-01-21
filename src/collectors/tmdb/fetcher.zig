@@ -1,14 +1,19 @@
 const log = std.log.scoped(.tmdb_fetcher);
 
 const BATCH_SIZE = 1_000;
+const AMOUNT_OF_THREADS = 10;
 
 const Data = struct {
+    id: []u8,
     title: []u8,
     release_date: []u8,
     runtime_minutes: ?i64,
+    description: ?[]u8,
     fn deinit(self: Data, allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
         allocator.free(self.title);
         allocator.free(self.release_date);
+        if (self.description) |description| allocator.free(description);
     }
 };
 
@@ -132,7 +137,7 @@ pub fn fetch(
     const ca_bundle = try allocator.create(std.array_list.Managed(u8));
     ca_bundle.* = try curl.allocCABundle(allocator);
 
-    const handle_pool = try HandlePool.init(allocator, 10, ca_bundle.*);
+    const handle_pool = try HandlePool.init(allocator, AMOUNT_OF_THREADS, ca_bundle.*);
     state.* = SharedState{
         .allocator = allocator,
         .database = database,
@@ -147,7 +152,7 @@ pub fn fetch(
 
     try state.pool.init(.{
         .allocator = allocator,
-        .n_jobs = 10,
+        .n_jobs = AMOUNT_OF_THREADS,
     });
 
     const total_amount = try GetNotCompletedCount.call(database, .{ .provider = "tmdb", .status = .todo });
@@ -182,9 +187,6 @@ fn fetchImpl(state: *SharedState) !void {
             return err;
         };
         defer {
-            // NOTE: this could be put in the loop, but that way, unprocessed ids will leak.
-            for (id_list) |id| state.allocator.free(id);
-
             state.allocator.free(id_list);
         }
 
@@ -211,6 +213,7 @@ fn fetchImpl(state: *SharedState) !void {
             state.wg.start();
             try state.pool.spawn(spawnRequestThread, .{
                 state,
+                id,
                 url,
                 state.headers,
             });
@@ -223,7 +226,7 @@ fn fetchImpl(state: *SharedState) !void {
     }
 }
 
-fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
+fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) void {
     defer {
         state.wg.finish();
         state.allocator.free(url);
@@ -264,12 +267,16 @@ fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
             while (new_wait_until > current) {
                 current = state.backoff.cmpxchgStrong(current, new_wait_until, .monotonic, .monotonic) orelse break;
             }
+            continue;
         }
 
-        const response = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
+        const response: std.json.Parsed(MovieIDResponse) = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
             .ignore_unknown_fields = true,
             .allocate = .alloc_always,
-        }) catch return;
+        }) catch |err| {
+            log.err("failed to parse response for {s}! {}", .{ url, err });
+            return;
+        };
         defer response.deinit();
         const title = state.allocator.dupe(u8, response.value.title) catch return;
 
@@ -280,13 +287,21 @@ fn spawnRequestThread(state: *SharedState, url: [:0]u8, headers: [:0]u8) void {
 
         const runtime_minute: ?i64 = if (response.value.runtime == 0) null else @intCast(response.value.runtime);
 
+        const description = state.allocator.dupe(u8, response.value.overview) catch {
+            state.allocator.free(title);
+            state.allocator.free(release_date);
+            return;
+        };
+
         state.mutex.lock();
         defer state.mutex.unlock();
 
         state.data_list.append(state.allocator, .{
+            .id = id,
             .release_date = release_date,
             .title = title,
             .runtime_minutes = runtime_minute,
+            .description = description,
         }) catch |err| {
             log.err("failed to append! {}", .{err});
             state.allocator.free(title);
@@ -312,6 +327,9 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
         mutable_data.deinit(state.allocator);
     }
 
+    var ids = state.allocator.alloc([]const u8, data.items.len) catch return;
+    defer state.allocator.free(ids);
+
     var titles = state.allocator.alloc([]const u8, data.items.len) catch return;
     defer state.allocator.free(titles);
 
@@ -321,10 +339,15 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
     var runtimes = state.allocator.alloc(?i64, data.items.len) catch return;
     defer state.allocator.free(runtimes);
 
+    var descriptions = state.allocator.alloc(?[]const u8, data.items.len) catch return;
+    defer state.allocator.free(descriptions);
+
     for (data.items, 0..) |item, i| {
+        ids[i] = item.id;
         titles[i] = item.title;
         dates[i] = item.release_date;
         runtimes[i] = item.runtime_minutes;
+        descriptions[i] = item.description;
     }
 
     const create_request: CreateMultipleMovies.Request = .{
@@ -332,10 +355,21 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
         .user_id = state.user_id,
         .release_dates = dates,
         .runtime_minutes = runtimes,
+        .descriptions = descriptions,
     };
 
     CreateMultipleMovies.call(state.database, create_request) catch |err| {
         log.err("creating movie failed! {}", .{err});
+        return;
+    };
+
+    const edit_status_request: EditStatus.Request = .{
+        .provider = "tmdb",
+        .external_id = ids,
+        .status = .completed,
+    };
+    EditStatus.call(state.database, edit_status_request) catch |err| {
+        log.err("updating status failed! {}", .{err});
         return;
     };
 }
@@ -405,7 +439,10 @@ const curl = @import("curl");
 
 const GetNotCompleted = @import("../../models/collectors/collectors.zig").GetNotCompleted;
 const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").GetNotCompletedCount;
+const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
+
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
+
 const Database = @import("../../database.zig").Pool;
 
 const Allocator = std.mem.Allocator;
