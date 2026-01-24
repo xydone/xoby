@@ -112,7 +112,10 @@ CREATE TABLE content.people (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
 full_name TEXT NOT NULL,
 bio TEXT,
-created_at TIMESTAMPTZ DEFAULT now ()
+provider TEXT NOT NULL,
+external_id TEXT NOT NULL,
+created_at TIMESTAMPTZ DEFAULT now (),
+UNIQUE (provider, external_id)
 ) ;
 
 CREATE TABLE content.media_staff (

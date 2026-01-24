@@ -9,11 +9,25 @@ const Data = struct {
     release_date: []u8,
     runtime_minutes: ?i64,
     description: ?[]u8,
-    fn deinit(self: Data, allocator: std.mem.Allocator) void {
+    staff: []Staff,
+
+    pub const Staff = struct {
+        id: u64,
+        full_name: []const u8,
+        role_name: []const u8,
+
+        fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+            allocator.free(self.full_name);
+            allocator.free(self.role_name);
+        }
+    };
+    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.id);
         allocator.free(self.title);
         allocator.free(self.release_date);
         if (self.description) |description| allocator.free(description);
+        for (self.staff) |staff| staff.deinit(allocator);
+        allocator.free(self.staff);
     }
 };
 
@@ -34,7 +48,6 @@ const SharedState = struct {
     backoff: std.atomic.Value(i64) = .init(0),
 
     fn flushLocked(self: *SharedState) !void {
-        log.debug("Making database call due to flush.", .{});
         if (self.data_list.items.len == 0) return;
 
         const batch_to_save = self.data_list;
@@ -204,7 +217,7 @@ fn fetchImpl(state: *SharedState) !void {
             const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
             if (wait_time > 0) std.Thread.sleep(@intCast(wait_time * std.time.ns_per_ms));
 
-            const url = try std.fmt.allocPrintSentinel(state.allocator, "https://api.themoviedb.org/3/movie/{s}", .{id}, 0);
+            const url = try std.fmt.allocPrintSentinel(state.allocator, "https://api.themoviedb.org/3/movie/{s}?append_to_response=credits", .{id}, 0);
             rate_limiter.addRequest(std.time.milliTimestamp()) catch |err| {
                 log.err("rate limited failed to add request! {}", .{err});
                 return err;
@@ -223,18 +236,27 @@ fn fetchImpl(state: *SharedState) !void {
         try state.flushLocked();
 
         state.mutex.unlock();
-        break;
     }
 }
 
 fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) void {
+    handleRequest(state, id, url, headers) catch |err| {
+        log.debug("Request thread failed! {}", .{err});
+    };
+}
+
+fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !void {
     defer {
         state.wg.finish();
         state.allocator.free(url);
     }
 
-    const easy = state.handle_pool.acquire() orelse @panic("no handles in pool");
-    defer state.handle_pool.release(easy) catch |err| std.debug.panic("error releasing: {}", .{err});
+    const easy = state.handle_pool.acquire() orelse {
+        @panic("no handles!");
+    };
+    defer state.handle_pool.release(easy) catch |err| {
+        std.debug.panic("error releasing: {}", .{err});
+    };
 
     const max_retries = 5;
     var attempt: u32 = 0;
@@ -243,15 +265,17 @@ fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u
         state.checkBackoff();
 
         var writer = std.Io.Writer.Allocating.init(state.allocator);
+
         defer writer.deinit();
 
-        const resp = easy.fetch(
+        const resp = try easy.fetch(
             url,
             .{
                 .headers = &.{headers},
                 .writer = &writer.writer,
             },
-        ) catch return;
+        );
+
         if (resp.status_code != 200) log.debug("status code: {}", .{resp.status_code});
         if (resp.status_code == 429) {
             const base_delay: u64 = @as(u64, 1) << @intCast(attempt);
@@ -271,30 +295,60 @@ fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u
             continue;
         }
 
-        const response: std.json.Parsed(MovieIDResponse) = std.json.parseFromSlice(MovieIDResponse, state.allocator, writer.written(), .{
-            .ignore_unknown_fields = true,
-            .allocate = .alloc_always,
-        }) catch |err| {
-            log.err("failed to parse response for {s}! {}", .{ url, err });
-            return;
-        };
-        defer response.deinit();
-        const title = state.allocator.dupe(u8, response.value.title) catch return;
+        var scanner = std.json.Scanner.initCompleteInput(state.allocator, writer.written());
+        defer scanner.deinit();
+        var diag = std.json.Diagnostics{};
+        scanner.enableDiagnostics(&diag);
 
-        const release_date = state.allocator.dupe(u8, response.value.release_date) catch {
-            state.allocator.free(title);
-            return;
+        const response: std.json.Parsed(MovieIDResponse) = std.json.parseFromTokenSource(
+            MovieIDResponse,
+            state.allocator,
+            &scanner,
+            .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            },
+        ) catch |err| {
+            log.err("failed to parse response for {s}! {}", .{ url, err });
+            std.debug.print("byte offset: {d}\n", .{diag.getByteOffset()});
+            std.debug.print("column: {d}\n", .{diag.getColumn()});
+            std.debug.print("line: {d}\n", .{diag.getLine()});
+            return err;
         };
+
+        defer response.deinit();
+
+        const title = try state.allocator.dupe(u8, response.value.title);
+        errdefer state.allocator.free(title);
+
+        const release_date = try state.allocator.dupe(u8, response.value.release_date);
+        errdefer state.allocator.free(release_date);
 
         const runtime_minute: ?i64 = if (response.value.runtime == 0) null else @intCast(response.value.runtime);
 
-        const description = state.allocator.dupe(u8, response.value.overview) catch {
-            state.allocator.free(title);
-            state.allocator.free(release_date);
-            return;
-        };
+        const description = try state.allocator.dupe(u8, response.value.overview);
+        errdefer state.allocator.free(description);
+
+        var staff: std.ArrayList(Data.Staff) = .empty;
+
+        for (response.value.credits.cast) |cast| {
+            try staff.append(state.allocator, .{
+                .full_name = try state.allocator.dupe(u8, cast.name),
+                .id = cast.id,
+                .role_name = try state.allocator.dupe(u8, cast.character),
+            });
+        }
+
+        for (response.value.credits.crew) |crew| {
+            try staff.append(state.allocator, .{
+                .full_name = try state.allocator.dupe(u8, crew.name),
+                .id = crew.id,
+                .role_name = try state.allocator.dupe(u8, crew.job),
+            });
+        }
 
         state.mutex.lock();
+
         defer state.mutex.unlock();
 
         state.data_list.append(state.allocator, .{
@@ -303,6 +357,7 @@ fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u
             .title = title,
             .runtime_minutes = runtime_minute,
             .description = description,
+            .staff = try staff.toOwnedSlice(state.allocator),
         }) catch |err| {
             log.err("failed to append! {}", .{err});
             state.allocator.free(title);
@@ -319,6 +374,14 @@ fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u
 }
 
 fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
+    handleModel(state, data) catch |err| {
+        log.err("model failed! {}", .{err});
+    };
+}
+fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
+    var arena = std.heap.ArenaAllocator.init(state.allocator);
+    const allocator = arena.allocator();
+
     defer state.wg.finish();
     defer {
         for (data.items) |item| {
@@ -328,20 +391,18 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
         mutable_data.deinit(state.allocator);
     }
 
-    var ids = state.allocator.alloc([]const u8, data.items.len) catch return;
-    defer state.allocator.free(ids);
+    var timer = try std.time.Timer.start();
+    defer log.debug("writing to database took {}", .{timer.lap() / 1_000_000});
 
-    var titles = state.allocator.alloc([]const u8, data.items.len) catch return;
-    defer state.allocator.free(titles);
+    var ids = try allocator.alloc([]const u8, data.items.len);
 
-    var dates = state.allocator.alloc([]const u8, data.items.len) catch return;
-    defer state.allocator.free(dates);
+    var titles = try allocator.alloc([]const u8, data.items.len);
 
-    var runtimes = state.allocator.alloc(?i64, data.items.len) catch return;
-    defer state.allocator.free(runtimes);
+    var dates = try allocator.alloc([]const u8, data.items.len);
 
-    var descriptions = state.allocator.alloc(?[]const u8, data.items.len) catch return;
-    defer state.allocator.free(descriptions);
+    var runtimes = try allocator.alloc(?i64, data.items.len);
+
+    var descriptions = try allocator.alloc(?[]const u8, data.items.len);
 
     for (data.items, 0..) |item, i| {
         ids[i] = item.id;
@@ -351,7 +412,7 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
         descriptions[i] = item.description;
     }
 
-    const create_request: CreateMultipleMovies.Request = .{
+    const movies_request: CreateMultipleMovies.Request = .{
         .titles = titles,
         .user_id = state.user_id,
         .release_dates = dates,
@@ -359,10 +420,79 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
         .descriptions = descriptions,
     };
 
-    CreateMultipleMovies.call(state.database, create_request) catch |err| {
+    const movie_ids = CreateMultipleMovies.call(allocator, state.database, movies_request) catch |err| {
         log.err("creating movie failed! {}", .{err});
-        return;
+        return err;
     };
+
+    var total_staff_count: usize = 0;
+    for (data.items) |movie| total_staff_count += movie.staff.len;
+
+    var full_names = try allocator.alloc([]const u8, total_staff_count);
+
+    var bios = try allocator.alloc(?[]const u8, total_staff_count);
+
+    var media_ids = try allocator.alloc([]const u8, total_staff_count);
+
+    var role_names = try allocator.alloc([]const u8, total_staff_count);
+
+    var providers = try allocator.alloc([]const u8, total_staff_count);
+
+    var external_ids = try allocator.alloc([]const u8, total_staff_count);
+
+    var staff_idx: usize = 0;
+    for (data.items, 0..) |movie, movie_idx| {
+        const db_movie_id = movie_ids.ids[movie_idx];
+
+        for (movie.staff) |staff_member| {
+            full_names[staff_idx] = staff_member.full_name;
+            // TODO: bios
+            bios[staff_idx] = null;
+            providers[staff_idx] = "tmdb";
+            media_ids[staff_idx] = db_movie_id;
+            role_names[staff_idx] = staff_member.role_name;
+            external_ids[staff_idx] = try std.fmt.allocPrint(allocator, "{}", .{staff_member.id});
+            staff_idx += 1;
+        }
+    }
+
+    const staff_request: CreateMultiplePeople.Request = .{
+        .full_names = full_names,
+        .bios = bios,
+        .provider = providers,
+        .external_ids = external_ids,
+    };
+
+    // WARNING: returns all that have been inserted, filters out duplicates
+    const people_response = CreateMultiplePeople.call(allocator, state.database, staff_request) catch |err| {
+        log.err("creating staff failed! {}", .{err});
+        return err;
+    };
+
+    var person_ids = try allocator.alloc([]const u8, total_staff_count);
+
+    var map = std.StringHashMap([]const u8).init(allocator);
+
+    for (people_response) |staff| {
+        try map.put(staff.external_id, staff.person_id);
+    }
+
+    for (external_ids, 0..) |external_id, i| {
+        const person_id = map.get(external_id) orelse {
+            log.err("external id not in map!", .{});
+            return error.ExternalIDNotInMap;
+        };
+
+        person_ids[i] = person_id;
+    }
+
+    const media_staff_request: CreateMultipleMediaStaff.Request = .{
+        .media_ids = media_ids,
+        .role_names = role_names,
+        .person_ids = person_ids,
+    };
+
+    try CreateMultipleMediaStaff.call(state.database, media_staff_request);
 
     const edit_status_request: EditStatus.Request = .{
         .provider = "tmdb",
@@ -371,7 +501,7 @@ fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
     };
     EditStatus.call(state.database, edit_status_request) catch |err| {
         log.err("updating status failed! {}", .{err});
-        return;
+        return err;
     };
 }
 
@@ -409,6 +539,7 @@ const MovieIDResponse = struct {
     video: bool,
     vote_average: f32,
     vote_count: i64,
+    credits: Credits,
 
     pub const Genre = struct {
         id: i64,
@@ -432,6 +563,40 @@ const MovieIDResponse = struct {
         iso_639_1: []const u8,
         name: []const u8,
     };
+
+    pub const Credits = struct {
+        cast: []Cast,
+        crew: []Crew,
+
+        pub const Cast = struct {
+            adult: bool,
+            gender: u16,
+            id: u64,
+            known_for_department: ?[]const u8,
+            name: []const u8,
+            original_name: []const u8,
+            popularity: f32,
+            profile_path: ?[]const u8,
+            cast_id: u64,
+            character: []const u8,
+            credit_id: []const u8,
+            order: u64,
+        };
+
+        pub const Crew = struct {
+            adult: bool,
+            gender: u16,
+            id: u64,
+            known_for_department: ?[]const u8,
+            name: []const u8,
+            original_name: []const u8,
+            popularity: f32,
+            profile_path: ?[]const u8,
+            credit_id: []const u8,
+            department: []const u8,
+            job: []const u8,
+        };
+    };
 };
 
 const RateLimiter = @import("../../rate_limiter.zig").RateLimiter;
@@ -443,6 +608,8 @@ const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").G
 const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
 
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
+const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
+const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
 
 const Database = @import("../../database.zig").Pool;
 

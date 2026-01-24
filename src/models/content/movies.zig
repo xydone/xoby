@@ -74,16 +74,24 @@ pub const CreateMultiple = struct {
         descriptions: []?[]const u8,
     };
 
+    pub const Response = struct {
+        ids: [][]u8,
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            for (self.ids) |id| allocator.free(id);
+            allocator.free(self.ids);
+        }
+    };
+
     pub const Errors = error{
-        BatchCreateFailed,
+        CreateFailed,
+        OutOfMemory,
         CannotAcquireConnection,
         MismatchedInputLengths,
     } || DatabaseErrors;
 
-    pub fn call(database: *Pool, request: Request) Errors!void {
-        // make sure all are of equal length
+    pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors!Response {
         const len = request.titles.len;
-        if (len == 0) return;
+        if (len == 0) return error.CreateFailed;
         if (request.release_dates.len != len or request.runtime_minutes.len != len or request.descriptions.len != len) {
             return error.MismatchedInputLengths;
         }
@@ -93,7 +101,7 @@ pub const CreateMultiple = struct {
 
         const error_handler = ErrorHandler{ .conn = conn };
 
-        _ = conn.exec(query_string, .{
+        const query = conn.query(query_string, .{
             request.titles,
             request.user_id,
             request.release_dates,
@@ -103,37 +111,46 @@ pub const CreateMultiple = struct {
             if (error_handler.handle(err)) |data| {
                 ErrorHandler.printErr(data);
             }
+            log.err("Query failed!", .{});
 
-            return error.BatchCreateFailed;
+            return error.CreateFailed;
+        };
+
+        var ids = std.ArrayList([]u8).initCapacity(allocator, request.titles.len) catch return error.OutOfMemory;
+        defer ids.deinit(allocator);
+
+        while (query.next() catch return error.CreateFailed) |row| {
+            const id = row.get([]u8, 0);
+            ids.append(allocator, UUID.toStringAlloc(allocator, id) catch return error.OutOfMemory) catch return error.OutOfMemory;
+        }
+
+        return .{
+            .ids = ids.toOwnedSlice(allocator) catch return error.OutOfMemory,
         };
     }
 
     const query_string =
         \\ WITH input_rows AS (
         \\ SELECT 
-        \\ gen_random_uuid() AS new_id,
+        \\ id_idx as row_idx,
+        \\ gen_random_uuid () AS new_id,
         \\ val.title,
         \\ NULLIF(val.rel_date, '')::date AS release_date,
         \\ val.runtime::integer AS runtime
-        \\ FROM UNNEST($1::text[], $3::text[], $4::bigint[],$5::text[]) 
-        \\ AS val(title, rel_date, runtime, description)
+        \\ FROM UNNEST($1::text[], $3::text[], $4::bigint[], $5::text[]) 
+        \\ WITH ORDINALITY AS val(title, rel_date, runtime, description, id_idx)
         \\ ),
         \\ inserted_media AS (
         \\ INSERT INTO content.media_items (id, user_id, title, release_date, media_type)
-        \\ SELECT 
-        \\ new_id, 
-        \\ $2::uuid, 
-        \\ title, 
-        \\ release_date, 
-        \\ 'movie'::content.media_type
+        \\ SELECT new_id, $2::uuid, title, release_date, 'movie'::content.media_type
         \\ FROM input_rows
-        \\ RETURNING id, title
-        \\ )
+        \\ ),
+        \\ inserted_movies AS (
         \\ INSERT INTO content.movies (media_id, runtime_minutes)
-        \\ SELECT 
-        \\ new_id, 
-        \\ runtime
+        \\ SELECT new_id, runtime
         \\ FROM input_rows
+        \\ )
+        \\ SELECT new_id FROM input_rows ORDER BY row_idx;
     ;
 };
 
