@@ -122,7 +122,8 @@ CREATE TABLE content.media_staff (
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
 person_id uuid REFERENCES content.people (id) ON DELETE CASCADE,
 role_name TEXT NOT NULL,
-PRIMARY KEY (media_id, person_id, role_name)
+character_name TEXT,
+PRIMARY KEY (media_id, person_id, role_name, character_name)
 ) ;
 
 

@@ -13,12 +13,13 @@ const Data = struct {
 
     pub const Staff = struct {
         id: u64,
-        full_name: []const u8,
+        full_name: []u8,
         role_name: []const u8,
+        character_name: ?[]u8,
 
         fn deinit(self: @This(), allocator: std.mem.Allocator) void {
             allocator.free(self.full_name);
-            allocator.free(self.role_name);
+            if (self.character_name) |character_name| allocator.free(character_name);
         }
     };
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
@@ -276,7 +277,10 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             },
         );
 
-        if (resp.status_code != 200) log.debug("status code: {}", .{resp.status_code});
+        if (resp.status_code != 200) {
+            log.debug("status code: {}", .{resp.status_code});
+            continue;
+        }
         if (resp.status_code == 429) {
             const base_delay: u64 = @as(u64, 1) << @intCast(attempt);
             const delay_ms = base_delay * 1000;
@@ -335,7 +339,8 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             try staff.append(state.allocator, .{
                 .full_name = try state.allocator.dupe(u8, cast.name),
                 .id = cast.id,
-                .role_name = try state.allocator.dupe(u8, cast.character),
+                .role_name = "Cast",
+                .character_name = try state.allocator.dupe(u8, cast.character),
             });
         }
 
@@ -343,7 +348,8 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             try staff.append(state.allocator, .{
                 .full_name = try state.allocator.dupe(u8, crew.name),
                 .id = crew.id,
-                .role_name = try state.allocator.dupe(u8, crew.job),
+                .role_name = "Crew",
+                .character_name = null,
             });
         }
 
@@ -429,15 +435,11 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
     for (data.items) |movie| total_staff_count += movie.staff.len;
 
     var full_names = try allocator.alloc([]const u8, total_staff_count);
-
     var bios = try allocator.alloc(?[]const u8, total_staff_count);
-
     var media_ids = try allocator.alloc([]const u8, total_staff_count);
-
     var role_names = try allocator.alloc([]const u8, total_staff_count);
-
+    var character_names = try allocator.alloc(?[]const u8, total_staff_count);
     var providers = try allocator.alloc([]const u8, total_staff_count);
-
     var external_ids = try allocator.alloc([]const u8, total_staff_count);
 
     var staff_idx: usize = 0;
@@ -451,6 +453,7 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
             providers[staff_idx] = "tmdb";
             media_ids[staff_idx] = db_movie_id;
             role_names[staff_idx] = staff_member.role_name;
+            character_names[staff_idx] = staff_member.character_name;
             external_ids[staff_idx] = try std.fmt.allocPrint(allocator, "{}", .{staff_member.id});
             staff_idx += 1;
         }
@@ -490,6 +493,7 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
         .media_ids = media_ids,
         .role_names = role_names,
         .person_ids = person_ids,
+        .character_names = character_names,
     };
 
     try CreateMultipleMediaStaff.call(state.database, media_staff_request);

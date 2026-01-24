@@ -19,6 +19,7 @@ pub const CreateStaff = struct {
         external_id: []const u8,
         media_id: []const u8,
         role_name: []const u8,
+        character_name: ?[]const u8,
     };
 
     const Response = struct {
@@ -131,6 +132,7 @@ pub const CreateMultipleMediaStaff = struct {
         person_ids: [][]const u8,
         media_ids: [][]const u8,
         role_names: [][]const u8,
+        character_names: []?[]const u8,
     };
 
     const Response = void;
@@ -151,6 +153,7 @@ pub const CreateMultipleMediaStaff = struct {
             request.media_ids,
             request.person_ids,
             request.role_names,
+            request.character_names,
         }) catch |err| {
             if (error_handler.handle(err)) |data| {
                 ErrorHandler.printErr(data);
