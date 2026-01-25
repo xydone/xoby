@@ -1,48 +1,51 @@
 const log = std.log.scoped(.tmdb_fetcher);
 
-const BATCH_SIZE = 100;
+const BATCH_SIZE = 1_000;
 const AMOUNT_OF_THREADS = 10;
 
-const Data = struct {
-    id: []u8,
-    title: []u8,
-    release_date: []u8,
+const Movie = struct {
+    id: []const u8,
+    title: []const u8,
+    release_date: []const u8,
     runtime_minutes: ?i64,
-    description: ?[]u8,
-    staff: []Staff,
-    images: []Image,
-
-    pub const Staff = struct {
-        id: u64,
-        full_name: []u8,
-        role_name: []const u8,
-        character_name: ?[]u8,
-
-        fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-            allocator.free(self.full_name);
-            if (self.character_name) |character_name| allocator.free(character_name);
-        }
-    };
-
-    pub const Image = struct {
-        width: i32,
-        height: i32,
-        path: []const u8,
-        image_type: ImageType,
-        is_primary: bool,
-
-        pub fn deinit(self: @This(), allocator: Allocator) void {
-            allocator.free(self.path);
-        }
-    };
+    description: ?[]const u8,
 
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.id);
         allocator.free(self.title);
         allocator.free(self.release_date);
         if (self.description) |description| allocator.free(description);
-        for (self.staff) |staff| staff.deinit(allocator);
-        allocator.free(self.staff);
+    }
+};
+
+pub const Staff = struct {
+    id: []const u8,
+    full_name: []const u8,
+    provider: []const u8,
+    bio: ?[]const u8,
+    role_name: []const u8,
+    character_name: ?[]const u8,
+    /// The TMDB ID of the movie the staff participates in
+    media_id: []const u8,
+
+    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.full_name);
+        if (self.character_name) |character_name| allocator.free(character_name);
+    }
+};
+
+pub const Image = struct {
+    width: i32,
+    height: i32,
+    path: []const u8,
+    image_type: ImageType,
+    is_primary: bool,
+    provider: []const u8,
+    /// The TMDB ID of the movie the staff participates in
+    media_id: []const u8,
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.path);
     }
 };
 
@@ -59,17 +62,28 @@ const SharedState = struct {
 
     mutex: std.Thread.Mutex = .{},
     wg: std.Thread.WaitGroup = .{},
-    data_list: std.ArrayList(Data),
+    movie_list: std.MultiArrayList(Movie),
+    image_list: std.MultiArrayList(Image),
+    staff_list: std.MultiArrayList(Staff),
     backoff: std.atomic.Value(i64) = .init(0),
 
     fn flushLocked(self: *SharedState) !void {
-        if (self.data_list.items.len == 0) return;
+        const movie = self.movie_list;
+        self.movie_list = std.MultiArrayList(Movie).empty;
 
-        const batch_to_save = self.data_list;
-        self.data_list = try std.ArrayList(Data).initCapacity(self.allocator, BATCH_SIZE);
+        const image = self.image_list;
+        self.image_list = std.MultiArrayList(Image).empty;
+
+        const staff = self.staff_list;
+        self.staff_list = std.MultiArrayList(Staff).empty;
 
         self.wg.start();
-        self.pool.spawn(spawnModelThread, .{ self, batch_to_save }) catch |err| {
+        self.pool.spawn(spawnModelThread, .{
+            self,
+            movie,
+            staff,
+            image,
+        }) catch |err| {
             self.wg.finish();
             return err;
         };
@@ -87,7 +101,9 @@ const SharedState = struct {
     fn deinit(self: *SharedState) void {
         self.wg.wait();
         self.pool.deinit();
-        self.data_list.deinit(self.allocator);
+        self.movie_list.deinit(self.allocator);
+        self.image_list.deinit(self.allocator);
+        self.staff_list.deinit(self.allocator);
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
         self.handle_pool.deinit();
@@ -173,7 +189,9 @@ pub fn fetch(
         .pool = undefined,
         .handle_pool = handle_pool,
         .requests_per_second = requests_per_second,
-        .data_list = try std.ArrayList(Data).initCapacity(allocator, BATCH_SIZE),
+        .movie_list = std.MultiArrayList(Movie).empty,
+        .staff_list = std.MultiArrayList(Staff).empty,
+        .image_list = std.MultiArrayList(Image).empty,
         .headers = headers,
         .ca_bundle = ca_bundle,
     };
@@ -347,32 +365,46 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
         const description = try state.allocator.dupe(u8, response.value.overview);
         errdefer state.allocator.free(description);
 
-        var staff: std.ArrayList(Data.Staff) = .empty;
+        state.mutex.lock();
+
+        defer state.mutex.unlock();
+
+        try state.movie_list.append(state.allocator, .{
+            .id = id,
+            .release_date = release_date,
+            .title = title,
+            .runtime_minutes = runtime_minute,
+            .description = description,
+        });
 
         for (response.value.credits.cast) |cast| {
-            try staff.append(state.allocator, .{
+            try state.staff_list.append(state.allocator, .{
                 .full_name = try state.allocator.dupe(u8, cast.name),
-                .id = cast.id,
+                .id = try std.fmt.allocPrint(state.allocator, "{}", .{cast.id}),
+                .media_id = id,
                 .role_name = "Cast",
+                .bio = null,
                 .character_name = try state.allocator.dupe(u8, cast.character),
+                .provider = "tmdb",
             });
         }
 
         for (response.value.credits.crew) |crew| {
-            try staff.append(state.allocator, .{
+            try state.staff_list.append(state.allocator, .{
                 .full_name = try state.allocator.dupe(u8, crew.name),
-                .id = crew.id,
+                .id = try std.fmt.allocPrint(state.allocator, "{}", .{crew.id}),
+                .media_id = id,
+                .bio = null,
                 .role_name = "Crew",
                 .character_name = null,
+                .provider = "tmdb",
             });
         }
 
-        var images: std.ArrayList(Data.Image) = .empty;
-
         inline for (@typeInfo(MovieIDResponse.Images.ImageType).@"enum".fields) |field| {
             for (@field(response.value.images, field.name)) |img| {
-                const image: MovieIDResponse.Images.Image = img;
-                try images.append(state.allocator, .{
+                const image: MovieIDResponse.Images.Img = img;
+                try state.image_list.append(state.allocator, .{
                     .width = image.width,
                     .height = image.height,
                     .path = try state.allocator.dupe(u8, image.file_path),
@@ -381,31 +413,15 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
                         .posters => .poster,
                         .logos => .logo,
                     },
+                    .provider = "tmdb",
+                    .media_id = id,
                     // TODO: some default primary logic
                     .is_primary = false,
                 });
             }
         }
-
-        state.mutex.lock();
-
-        defer state.mutex.unlock();
-
-        state.data_list.append(state.allocator, .{
-            .id = id,
-            .release_date = release_date,
-            .title = title,
-            .runtime_minutes = runtime_minute,
-            .description = description,
-            .staff = try staff.toOwnedSlice(state.allocator),
-            .images = try images.toOwnedSlice(state.allocator),
-        }) catch |err| {
-            log.err("failed to append! {}", .{err});
-            state.allocator.free(title);
-            state.allocator.free(release_date);
-        };
-        if (state.data_list.items.len >= BATCH_SIZE) {
-            state.flushLocked() catch |err| log.err("Batch flush failed! {}", .{err});
+        if (state.movie_list.items(.id).len >= BATCH_SIZE) {
+            try state.flushLocked();
         }
 
         // if we are here, congratulations, the request went through
@@ -414,19 +430,20 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
     log.err("Giving up on {s} after {} tries", .{ url, attempt });
 }
 
-fn spawnModelThread(state: *SharedState, data: std.ArrayList(Data)) void {
-    handleModel(state, data) catch |err| {
+fn spawnModelThread(state: *SharedState, movie: std.MultiArrayList(Movie), staff: std.MultiArrayList(Staff), images: std.MultiArrayList(Image)) void {
+    handleModel(state, movie, staff, images) catch |err| {
         log.err("model failed! {}", .{err});
     };
 }
-fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
+fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.MultiArrayList(Staff), images: std.MultiArrayList(Image)) !void {
     var arena = std.heap.ArenaAllocator.init(state.allocator);
     const allocator = arena.allocator();
 
     defer state.wg.finish();
     defer {
-        for (data.items) |item| {
-            item.deinit(state.allocator);
+        const slice = data.slice();
+        for (0..slice.len) |i| {
+            slice.get(i).deinit(allocator);
         }
         var mutable_data = data;
         mutable_data.deinit(state.allocator);
@@ -435,34 +452,12 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
     var timer = try std.time.Timer.start();
     defer log.debug("writing to database took {}", .{timer.lap() / 1_000_000});
 
-    var ids = try allocator.alloc([]const u8, data.items.len);
-
-    var titles = try allocator.alloc([]const u8, data.items.len);
-
-    var dates = try allocator.alloc([]const u8, data.items.len);
-
-    var runtimes = try allocator.alloc(?i64, data.items.len);
-
-    var descriptions = try allocator.alloc(?[]const u8, data.items.len);
-
-    var total_staff_count: usize = 0;
-    var total_image_count: usize = 0;
-    for (data.items, 0..) |item, i| {
-        ids[i] = item.id;
-        titles[i] = item.title;
-        dates[i] = item.release_date;
-        runtimes[i] = item.runtime_minutes;
-        descriptions[i] = item.description;
-        total_staff_count += item.staff.len;
-        total_image_count += item.images.len;
-    }
-
     const movies_request: CreateMultipleMovies.Request = .{
-        .titles = titles,
+        .titles = data.items(.title),
         .user_id = state.user_id,
-        .release_dates = dates,
-        .runtime_minutes = runtimes,
-        .descriptions = descriptions,
+        .release_dates = data.items(.release_date),
+        .runtime_minutes = data.items(.runtime_minutes),
+        .descriptions = data.items(.description),
     };
 
     const movie_ids = CreateMultipleMovies.call(allocator, state.database, movies_request) catch |err| {
@@ -470,100 +465,85 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
         return err;
     };
 
-    // TODO: this is madness
-    var full_names = try allocator.alloc([]const u8, total_staff_count);
-    var bios = try allocator.alloc(?[]const u8, total_staff_count);
-    var media_ids = try allocator.alloc([]const u8, total_staff_count);
-    var role_names = try allocator.alloc([]const u8, total_staff_count);
-    var character_names = try allocator.alloc(?[]const u8, total_staff_count);
-    var providers = try allocator.alloc([]const u8, total_staff_count);
-    var external_ids = try allocator.alloc([]const u8, total_staff_count);
-
-    var image_media_ids = try allocator.alloc([]const u8, total_image_count);
-    var widths = try allocator.alloc(i32, total_image_count);
-    var heights = try allocator.alloc(i32, total_image_count);
-    var image_types = try allocator.alloc(ImageType, total_image_count);
-    var paths = try allocator.alloc([]const u8, total_image_count);
-    var is_primary = try allocator.alloc(bool, total_image_count);
-    var image_providers = try allocator.alloc([]const u8, total_image_count);
-
-    var staff_idx: usize = 0;
-    var image_idx: usize = 0;
-    for (data.items, 0..) |movie, movie_idx| {
-        const db_movie_id = movie_ids.ids[movie_idx];
-
-        for (movie.staff) |staff_member| {
-            full_names[staff_idx] = staff_member.full_name;
-            // TODO: bios
-            bios[staff_idx] = null;
-            providers[staff_idx] = "tmdb";
-            media_ids[staff_idx] = db_movie_id;
-            role_names[staff_idx] = staff_member.role_name;
-            character_names[staff_idx] = staff_member.character_name;
-            external_ids[staff_idx] = try std.fmt.allocPrint(allocator, "{}", .{staff_member.id});
-            staff_idx += 1;
-        }
-        for (movie.images) |image| {
-            image_media_ids[image_idx] = db_movie_id;
-            image_providers[image_idx] = "tmdb";
-            widths[image_idx] = image.width;
-            heights[image_idx] = image.height;
-            image_types[image_idx] = image.image_type;
-            paths[image_idx] = image.path;
-            is_primary[image_idx] = image.is_primary;
-            image_idx += 1;
-        }
+    var external_media_id_to_db_id = std.StringHashMap([]u8).init(allocator);
+    for (data.items(.id), movie_ids.ids) |external_id, db_id| {
+        try external_media_id_to_db_id.put(external_id, db_id);
     }
 
     const staff_request: CreateMultiplePeople.Request = .{
-        .full_names = full_names,
-        .bios = bios,
-        .provider = providers,
-        .external_ids = external_ids,
+        .full_names = staff.items(.full_name),
+        .bios = staff.items(.bio),
+        .provider = staff.items(.provider),
+        .external_ids = staff.items(.id),
     };
 
-    // WARNING: returns all that have been inserted, filters out duplicates
+    // WARNING: doesn't return duplicates
     const people_response = CreateMultiplePeople.call(allocator, state.database, staff_request) catch |err| {
         log.err("creating staff failed! {}", .{err});
         return err;
     };
 
-    var person_ids = try allocator.alloc([]const u8, total_staff_count);
+    const person_ids = blk: {
+        const ids = try allocator.alloc([]const u8, staff.len);
 
-    var map = std.StringHashMap([]const u8).init(allocator);
+        var map = std.StringHashMap([]const u8).init(allocator);
 
-    for (people_response) |staff| {
-        try map.put(staff.external_id, staff.person_id);
-    }
+        for (people_response) |res| {
+            try map.put(res.external_id, res.person_id);
+        }
 
-    for (external_ids, 0..) |external_id, i| {
-        const person_id = map.get(external_id) orelse {
-            log.err("external id not in map!", .{});
-            return error.ExternalIDNotInMap;
-        };
+        for (staff.items(.id), 0..) |external_id, i| {
+            ids[i] = map.get(external_id) orelse {
+                log.err("external id not in map!", .{});
+                return error.ExternalIDNotInMap;
+            };
+        }
+        break :blk ids;
+    };
 
-        person_ids[i] = person_id;
-    }
+    const staff_media_ids = blk: {
+        const ids = try allocator.alloc([]const u8, staff.len);
+
+        for (staff.items(.media_id), 0..) |external_id, i| {
+            ids[i] = external_media_id_to_db_id.get(external_id) orelse {
+                log.debug("Staff: Movie {s} doesnt have an id inside the map!", .{external_id});
+                return error.MovieNotInsideMap;
+            };
+        }
+        break :blk ids;
+    };
 
     const media_staff_request: CreateMultipleMediaStaff.Request = .{
-        .media_ids = media_ids,
-        .role_names = role_names,
+        .media_ids = staff_media_ids,
+        .role_names = staff.items(.role_name),
         .person_ids = person_ids,
-        .character_names = character_names,
+        .character_names = staff.items(.character_name),
     };
     CreateMultipleMediaStaff.call(state.database, media_staff_request) catch |err| {
         log.debug("Couldn't create staff! {}", .{err});
         return err;
     };
 
+    const image_media_ids = blk: {
+        const ids = try allocator.alloc([]const u8, images.len);
+
+        for (images.items(.media_id), 0..) |external_id, i| {
+            ids[i] = external_media_id_to_db_id.get(external_id) orelse {
+                log.debug("Images: Movie {s} doesnt have an id inside the map!", .{external_id});
+                return error.MovieNotInsideMap;
+            };
+        }
+        break :blk ids;
+    };
+
     const images_request: CreateMultipleImages.Request = .{
         .media_ids = image_media_ids,
-        .image_type = image_types,
-        .width = widths,
-        .height = heights,
-        .provider_id = image_providers,
-        .path = paths,
-        .is_primary = is_primary,
+        .image_type = images.items(.image_type),
+        .width = images.items(.width),
+        .height = images.items(.height),
+        .provider_id = images.items(.provider),
+        .path = images.items(.path),
+        .is_primary = images.items(.is_primary),
     };
     CreateMultipleImages.call(state.database, images_request) catch |err| {
         log.debug("Couldn't create images! {}", .{err});
@@ -572,7 +552,7 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
 
     const edit_status_request: EditStatus.Request = .{
         .provider = "tmdb",
-        .external_id = ids,
+        .external_id = data.items(.id),
         .status = .completed,
     };
     EditStatus.call(state.database, edit_status_request) catch |err| {
@@ -676,13 +656,13 @@ const MovieIDResponse = struct {
     };
 
     pub const Images = struct {
-        backdrops: []Image,
-        logos: []Image,
-        posters: []Image,
+        backdrops: []Img,
+        logos: []Img,
+        posters: []Img,
 
         const ImageType = enum { backdrops, logos, posters };
 
-        pub const Image = struct {
+        pub const Img = struct {
             aspect_ratio: f32,
             height: i32,
             iso_3166_1: ?[]const u8,
