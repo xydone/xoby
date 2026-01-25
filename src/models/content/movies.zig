@@ -84,6 +84,7 @@ pub const CreateMultiple = struct {
 
     pub const Errors = error{
         CreateFailed,
+        RequestTooShort,
         OutOfMemory,
         CannotAcquireConnection,
         MismatchedInputLengths,
@@ -91,7 +92,7 @@ pub const CreateMultiple = struct {
 
     pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors!Response {
         const len = request.titles.len;
-        if (len == 0) return error.CreateFailed;
+        if (len == 0) return error.RequestTooShort;
         if (request.release_dates.len != len or request.runtime_minutes.len != len or request.descriptions.len != len) {
             return error.MismatchedInputLengths;
         }
@@ -115,6 +116,7 @@ pub const CreateMultiple = struct {
 
             return error.CreateFailed;
         };
+        defer query.deinit();
 
         var ids = std.ArrayList([]u8).initCapacity(allocator, request.titles.len) catch return error.OutOfMemory;
         defer ids.deinit(allocator);

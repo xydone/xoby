@@ -38,6 +38,9 @@
             .indexer_path = null,
             // How many requests to send per second when fetching
             .requests_per_second = 20,
+            // The collector writes to the database in batches. This value specifies how big the batches should be.
+            // Bigger batches mean less frequent writes to disk, but more memory usage.
+            .batch_size = 1_000,
         },
     },
 }

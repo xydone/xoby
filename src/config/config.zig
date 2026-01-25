@@ -39,6 +39,7 @@ pub const Collectors = struct {
         api_key: ?[]const u8,
         indexer_path: ?[]const u8,
         requests_per_second: u32,
+        batch_size: u32,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
             if (self.indexer_path) |p| allocator.free(p);
@@ -146,6 +147,7 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                     }
                 },
                 .requests_per_second = config_file.collectors.tmdb.requests_per_second,
+                .batch_size = config_file.collectors.tmdb.batch_size,
             },
         },
     };

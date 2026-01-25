@@ -1,167 +1,6 @@
 const log = std.log.scoped(.tmdb_fetcher);
 
-const BATCH_SIZE = 1_000;
 const AMOUNT_OF_THREADS = 10;
-
-const Movie = struct {
-    id: []const u8,
-    title: []const u8,
-    release_date: []const u8,
-    runtime_minutes: ?i64,
-    description: ?[]const u8,
-
-    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.id);
-        allocator.free(self.title);
-        allocator.free(self.release_date);
-        if (self.description) |description| allocator.free(description);
-    }
-};
-
-pub const Staff = struct {
-    id: []const u8,
-    full_name: []const u8,
-    provider: []const u8,
-    bio: ?[]const u8,
-    role_name: []const u8,
-    character_name: ?[]const u8,
-    /// The TMDB ID of the movie the staff participates in
-    media_id: []const u8,
-
-    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.full_name);
-        if (self.character_name) |character_name| allocator.free(character_name);
-    }
-};
-
-pub const Image = struct {
-    width: i32,
-    height: i32,
-    path: []const u8,
-    image_type: ImageType,
-    is_primary: bool,
-    provider: []const u8,
-    /// The TMDB ID of the movie the staff participates in
-    media_id: []const u8,
-
-    pub fn deinit(self: @This(), allocator: Allocator) void {
-        allocator.free(self.path);
-    }
-};
-
-const SharedState = struct {
-    allocator: Allocator,
-    database: *Database,
-    user_id: []const u8,
-    requests_per_second: u32,
-    pool: std.Thread.Pool,
-    headers: [:0]u8,
-    ca_bundle: *std.array_list.Managed(u8),
-
-    handle_pool: HandlePool,
-
-    mutex: std.Thread.Mutex = .{},
-    wg: std.Thread.WaitGroup = .{},
-    movie_list: std.MultiArrayList(Movie),
-    image_list: std.MultiArrayList(Image),
-    staff_list: std.MultiArrayList(Staff),
-    backoff: std.atomic.Value(i64) = .init(0),
-
-    fn flushLocked(self: *SharedState) !void {
-        const movie = self.movie_list;
-        self.movie_list = std.MultiArrayList(Movie).empty;
-
-        const image = self.image_list;
-        self.image_list = std.MultiArrayList(Image).empty;
-
-        const staff = self.staff_list;
-        self.staff_list = std.MultiArrayList(Staff).empty;
-
-        self.wg.start();
-        self.pool.spawn(spawnModelThread, .{
-            self,
-            movie,
-            staff,
-            image,
-        }) catch |err| {
-            self.wg.finish();
-            return err;
-        };
-    }
-    fn checkBackoff(self: *SharedState) void {
-        while (true) {
-            const now = std.time.milliTimestamp();
-            const wait_until = self.backoff.load(.monotonic);
-            if (now >= wait_until) break;
-
-            const diff = wait_until - now;
-            std.Thread.sleep(@intCast(diff * std.time.ns_per_ms));
-        }
-    }
-    fn deinit(self: *SharedState) void {
-        self.wg.wait();
-        self.pool.deinit();
-        self.movie_list.deinit(self.allocator);
-        self.image_list.deinit(self.allocator);
-        self.staff_list.deinit(self.allocator);
-        self.allocator.free(self.headers);
-        self.allocator.free(self.user_id);
-        self.handle_pool.deinit();
-        self.ca_bundle.deinit();
-        self.allocator.destroy(self.ca_bundle);
-        self.allocator.destroy(self);
-    }
-};
-
-const HandlePool = struct {
-    mutex: std.Thread.Mutex = .{},
-    handles: std.ArrayList(*curl.Easy),
-    allocator: std.mem.Allocator,
-
-    fn init(allocator: std.mem.Allocator, size: usize, ca_bundle: std.array_list.Managed(u8)) !HandlePool {
-        var handles = std.ArrayList(*curl.Easy).empty;
-        errdefer {
-            for (handles.items) |h| {
-                h.deinit();
-                allocator.destroy(h);
-            }
-            handles.deinit(allocator);
-        }
-
-        for (0..size) |_| {
-            const h = try allocator.create(curl.Easy);
-            h.* = try curl.Easy.init(.{ .ca_bundle = ca_bundle });
-            try handles.append(allocator, h);
-        }
-
-        return .{
-            .handles = handles,
-            .allocator = allocator,
-        };
-    }
-
-    fn deinit(self: *HandlePool) void {
-        for (self.handles.items) |h| {
-            h.deinit();
-            self.allocator.destroy(h);
-        }
-        self.handles.deinit(self.allocator);
-    }
-
-    fn acquire(self: *HandlePool) ?*curl.Easy {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        return self.handles.pop();
-    }
-
-    fn release(self: *HandlePool, handle: *curl.Easy) !void {
-        handle.reset();
-
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        try self.handles.append(self.allocator, handle);
-    }
-};
 
 pub const Response = struct {
     total_amount: i64,
@@ -173,6 +12,7 @@ pub fn fetch(
     user_id: []const u8,
     api_key: []const u8,
     requests_per_second: u32,
+    batch_size: u32,
 ) !Response {
     const state = try allocator.create(SharedState);
 
@@ -194,6 +34,7 @@ pub fn fetch(
         .image_list = std.MultiArrayList(Image).empty,
         .headers = headers,
         .ca_bundle = ca_bundle,
+        .batch_size = batch_size,
     };
 
     try state.pool.init(.{
@@ -222,10 +63,12 @@ fn spawnFetchThread(state: *SharedState) void {
 }
 
 fn fetchImpl(state: *SharedState) !void {
-    while (true) {
+    var is_true = true;
+    while (is_true) {
+        is_true = false;
         const request = GetNotCompleted.Request{
             .provider = "tmdb",
-            .limit = 1_000,
+            .limit = state.batch_size,
         };
 
         const id_list = GetNotCompleted.call(state.allocator, state.database, request) catch |err| {
@@ -420,7 +263,7 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
                 });
             }
         }
-        if (state.movie_list.items(.id).len >= BATCH_SIZE) {
+        if (state.movie_list.items(.id).len >= state.batch_size) {
             try state.flushLocked();
         }
 
@@ -436,18 +279,31 @@ fn spawnModelThread(state: *SharedState, movie: std.MultiArrayList(Movie), staff
     };
 }
 fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.MultiArrayList(Staff), images: std.MultiArrayList(Image)) !void {
-    var arena = std.heap.ArenaAllocator.init(state.allocator);
-    const allocator = arena.allocator();
-
-    defer state.wg.finish();
     defer {
-        const slice = data.slice();
-        for (0..slice.len) |i| {
-            slice.get(i).deinit(allocator);
+        defer state.wg.finish();
+        {
+            var mutable_data = data;
+            const sl = data.slice();
+            for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
+            mutable_data.deinit(state.allocator);
         }
-        var mutable_data = data;
-        mutable_data.deinit(state.allocator);
+        {
+            var mutable_data = staff;
+            const sl = staff.slice();
+            for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
+            mutable_data.deinit(state.allocator);
+        }
+        {
+            var mutable_data = images;
+            const sl = images.slice();
+            for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
+            mutable_data.deinit(state.allocator);
+        }
     }
+
+    var arena = std.heap.ArenaAllocator.init(state.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     var timer = try std.time.Timer.start();
     defer log.debug("writing to database took {}", .{timer.lap() / 1_000_000});
@@ -673,6 +529,170 @@ const MovieIDResponse = struct {
             width: i32,
         };
     };
+};
+
+const Movie = struct {
+    id: []const u8,
+    title: []const u8,
+    release_date: []const u8,
+    runtime_minutes: ?i64,
+    description: ?[]const u8,
+
+    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.id);
+        allocator.free(self.title);
+        allocator.free(self.release_date);
+        if (self.description) |description| allocator.free(description);
+    }
+};
+
+pub const Staff = struct {
+    id: []const u8,
+    full_name: []const u8,
+    provider: []const u8,
+    bio: ?[]const u8,
+    role_name: []const u8,
+    character_name: ?[]const u8,
+    /// The TMDB ID of the movie the staff participates in
+    media_id: []const u8,
+
+    fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.full_name);
+        allocator.free(self.id);
+        if (self.character_name) |character_name| allocator.free(character_name);
+    }
+};
+
+pub const Image = struct {
+    width: i32,
+    height: i32,
+    path: []const u8,
+    image_type: ImageType,
+    is_primary: bool,
+    provider: []const u8,
+    /// The TMDB ID of the movie the staff participates in
+    media_id: []const u8,
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.path);
+    }
+};
+
+const SharedState = struct {
+    allocator: Allocator,
+    database: *Database,
+    user_id: []const u8,
+    requests_per_second: u32,
+    batch_size: u32,
+    pool: std.Thread.Pool,
+    headers: [:0]u8,
+    ca_bundle: *std.array_list.Managed(u8),
+
+    handle_pool: HandlePool,
+
+    mutex: std.Thread.Mutex = .{},
+    wg: std.Thread.WaitGroup = .{},
+    movie_list: std.MultiArrayList(Movie),
+    image_list: std.MultiArrayList(Image),
+    staff_list: std.MultiArrayList(Staff),
+    backoff: std.atomic.Value(i64) = .init(0),
+
+    fn flushLocked(self: *SharedState) !void {
+        if (self.movie_list.len == 0) return;
+        const movie = self.movie_list;
+        self.movie_list = std.MultiArrayList(Movie).empty;
+
+        const image = self.image_list;
+        self.image_list = std.MultiArrayList(Image).empty;
+
+        const staff = self.staff_list;
+        self.staff_list = std.MultiArrayList(Staff).empty;
+
+        self.wg.start();
+        self.pool.spawn(spawnModelThread, .{
+            self,
+            movie,
+            staff,
+            image,
+        }) catch |err| {
+            self.wg.finish();
+            return err;
+        };
+    }
+    fn checkBackoff(self: *SharedState) void {
+        while (true) {
+            const now = std.time.milliTimestamp();
+            const wait_until = self.backoff.load(.monotonic);
+            if (now >= wait_until) break;
+
+            const diff = wait_until - now;
+            std.Thread.sleep(@intCast(diff * std.time.ns_per_ms));
+        }
+    }
+    fn deinit(self: *SharedState) void {
+        log.info("Finished!", .{});
+        self.wg.wait();
+        self.pool.deinit();
+        self.movie_list.deinit(self.allocator);
+        self.image_list.deinit(self.allocator);
+        self.staff_list.deinit(self.allocator);
+        self.allocator.free(self.headers);
+        self.allocator.free(self.user_id);
+        self.handle_pool.deinit();
+        self.ca_bundle.deinit();
+        self.allocator.destroy(self.ca_bundle);
+        self.allocator.destroy(self);
+    }
+};
+
+const HandlePool = struct {
+    mutex: std.Thread.Mutex = .{},
+    handles: std.ArrayList(*curl.Easy),
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator, size: usize, ca_bundle: std.array_list.Managed(u8)) !HandlePool {
+        var handles = std.ArrayList(*curl.Easy).empty;
+        errdefer {
+            for (handles.items) |h| {
+                h.deinit();
+                allocator.destroy(h);
+            }
+            handles.deinit(allocator);
+        }
+
+        for (0..size) |_| {
+            const h = try allocator.create(curl.Easy);
+            h.* = try curl.Easy.init(.{ .ca_bundle = ca_bundle });
+            try handles.append(allocator, h);
+        }
+
+        return .{
+            .handles = handles,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *HandlePool) void {
+        for (self.handles.items) |h| {
+            h.deinit();
+            self.allocator.destroy(h);
+        }
+        self.handles.deinit(self.allocator);
+    }
+
+    fn acquire(self: *HandlePool) ?*curl.Easy {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.handles.pop();
+    }
+
+    fn release(self: *HandlePool, handle: *curl.Easy) !void {
+        handle.reset();
+
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.handles.append(self.allocator, handle);
+    }
 };
 
 const RateLimiter = @import("../../rate_limiter.zig").RateLimiter;

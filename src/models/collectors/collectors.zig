@@ -44,13 +44,14 @@ pub const Create = struct {
 pub const GetNotCompleted = struct {
     pub const Request = struct {
         provider: []const u8,
-        limit: i32 = 1_000,
+        limit: u32 = 1_000,
     };
 
     pub const Response = []u8;
 
     pub const Errors = error{
         CannotGet,
+        InvalidLimit,
         OutOfMemory,
         CannotParseID,
     } || DatabaseErrors;
@@ -63,7 +64,7 @@ pub const GetNotCompleted = struct {
             query_string,
             .{
                 request.provider,
-                request.limit,
+                std.math.cast(u32, request.limit) orelse return error.InvalidLimit,
             },
             .{
                 .column_names = true,

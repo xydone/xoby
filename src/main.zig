@@ -55,8 +55,8 @@ pub fn main() !void {
         },
     );
 
-    try @import("curl").globalInit();
-    defer @import("curl").globalDeinit();
+    try Collectors.init();
+    defer Collectors.deinit();
 
     API.init(router);
 

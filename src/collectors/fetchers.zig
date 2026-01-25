@@ -6,6 +6,13 @@ const Response = struct {
     tmdb: ?TMDB.Response = null,
 };
 
+pub inline fn init() !void {
+    try curl.globalInit();
+}
+
+pub inline fn deinit() void {
+    curl.globalDeinit();
+}
 pub fn fetch(
     allocator: Allocator,
     database: *Database,
@@ -24,6 +31,7 @@ pub fn fetch(
                     user_id,
                     api_key,
                     config.collectors.tmdb.requests_per_second,
+                    config.collectors.tmdb.batch_size,
                 ) catch |err| {
                     log.err("TMDB failed! {}", .{err});
                     continue;
@@ -40,6 +48,8 @@ const Collector = @import("collectors.zig").Collector;
 const Config = @import("../config/config.zig");
 
 const Database = @import("../database.zig").Pool;
+
+const curl = @import("curl");
 
 const Allocator = std.mem.Allocator;
 const std = @import("std");
