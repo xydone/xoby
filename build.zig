@@ -50,7 +50,11 @@ pub fn build(b: *std.Build) void {
     module.addImport("jwt", jwt.module("jwt"));
     openapi_module.addImport("jwt", jwt.module("jwt"));
 
-    const dep_curl = b.dependency("curl", .{});
+    const dep_curl = b.dependency("curl", .{
+        .target = target,
+        .optimize = optimize,
+        .mbedtls_pthreads = true,
+    });
     module.addImport("curl", dep_curl.module("curl"));
 
     const exe = b.addExecutable(.{
