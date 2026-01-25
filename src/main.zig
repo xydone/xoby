@@ -3,6 +3,8 @@ var debug_allocator: std.heap.DebugAllocator(.{
 }) = .init;
 const log = std.log.scoped(.main);
 
+var server_instance: ?*httpz.Server(*Handler) = null;
+
 pub fn main() !void {
     const allocator, const is_debug = gpa: {
         break :gpa switch (builtin.mode) {
@@ -38,7 +40,7 @@ pub fn main() !void {
     }, &handler);
     defer {
         server.deinit();
-        server.stop();
+        if (builtin.os.tag == .windows) server.stop();
     }
 
     const cors = try server.middleware(CORS, .{
@@ -59,7 +61,30 @@ pub fn main() !void {
     API.init(router);
 
     log.info("Listening on http://{s}:{d}/", .{ config.address, config.port });
+    // shutdown only available on posix
+    if (builtin.os.tag != .windows) {
+        std.posix.sigaction(std.posix.SIG.INT, &.{
+            .handler = .{ .handler = shutdown },
+            .mask = std.posix.sigemptyset(),
+            .flags = 0,
+        }, null);
+        std.posix.sigaction(std.posix.SIG.TERM, &.{
+            .handler = .{ .handler = shutdown },
+            .mask = std.posix.sigemptyset(),
+            .flags = 0,
+        }, null);
+        log.info("To shutdown, run: kill -s int {d}", .{std.c.getpid()});
+        server_instance = &server;
+    }
+
     try server.listen();
+}
+
+fn shutdown(_: c_int) callconv(.c) void {
+    if (server_instance) |server| {
+        server_instance = null;
+        server.stop();
+    }
 }
 
 test "tests:beforeAll" {
