@@ -119,12 +119,40 @@ UNIQUE (provider, external_id)
 ) ;
 
 CREATE TABLE content.media_staff (
+id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
 person_id uuid REFERENCES content.people (id) ON DELETE CASCADE,
 role_name TEXT NOT NULL,
-character_name TEXT,
-PRIMARY KEY (media_id, person_id, role_name, character_name)
+character_name TEXT
 ) ;
+
+
+CREATE TYPE content.image_type AS ENUM ('backdrop', 'logo', 'poster');
+
+CREATE TABLE content.image_providers (
+    name TEXT PRIMARY KEY,
+    is_external BOOLEAN DEFAULT true NOT NULL
+);
+
+-- defaults
+INSERT INTO content.image_providers (name, is_external) VALUES 
+('local', false),
+('tmdb', true);
+
+CREATE TABLE content.media_images (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    media_id uuid NOT NULL REFERENCES content.media_items (id) ON DELETE CASCADE,
+
+    image_type content.image_type NOT NULL,
+    width INTEGER,
+    height INTEGER,
+
+    provider_name TEXT NOT NULL REFERENCES content.image_providers (name),
+    path TEXT NOT NULL,
+
+    is_primary BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
 
 CREATE TABLE content.organizations (

@@ -5,6 +5,12 @@ pub const MediaType = enum {
     manga,
 };
 
+pub const ImageType = enum {
+    backdrop,
+    logo,
+    poster,
+};
+
 pub const Media = @import("media.zig");
 pub const Books = @import("books.zig");
 pub const Movies = @import("movies.zig");
@@ -164,6 +170,51 @@ pub const CreateMultipleMediaStaff = struct {
     }
 
     const query_string = @embedFile("./queries/create_multiple_media_staff.sql");
+};
+
+pub const CreateMultipleImages = struct {
+    pub const Request = struct {
+        media_ids: [][]const u8,
+        image_type: []ImageType,
+        width: []i32,
+        height: []i32,
+        provider_id: [][]const u8,
+        path: [][]const u8,
+        is_primary: []bool,
+    };
+
+    const Response = void;
+
+    pub const Errors = error{
+        CouldntCreate,
+        CannotAcquireConnection,
+        MismatchedInputLengths,
+    } || DatabaseErrors;
+
+    pub fn call(database: *Pool, request: Request) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+
+        const error_handler = ErrorHandler{ .conn = conn };
+
+        _ = conn.exec(query_string, .{
+            request.media_ids,
+            request.image_type,
+            request.width,
+            request.height,
+            request.provider_id,
+            request.path,
+            request.is_primary,
+        }) catch |err| {
+            if (error_handler.handle(err)) |data| {
+                ErrorHandler.printErr(data);
+            }
+
+            return error.CouldntCreate;
+        } orelse return error.CouldntCreate;
+    }
+
+    const query_string = @embedFile("./queries/create_multiple_images.sql");
 };
 
 const Pool = @import("../../database.zig").Pool;

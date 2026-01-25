@@ -1,6 +1,6 @@
 const log = std.log.scoped(.tmdb_fetcher);
 
-const BATCH_SIZE = 1_000;
+const BATCH_SIZE = 100;
 const AMOUNT_OF_THREADS = 10;
 
 const Data = struct {
@@ -10,6 +10,7 @@ const Data = struct {
     runtime_minutes: ?i64,
     description: ?[]u8,
     staff: []Staff,
+    images: []Image,
 
     pub const Staff = struct {
         id: u64,
@@ -22,6 +23,19 @@ const Data = struct {
             if (self.character_name) |character_name| allocator.free(character_name);
         }
     };
+
+    pub const Image = struct {
+        width: i32,
+        height: i32,
+        path: []const u8,
+        image_type: ImageType,
+        is_primary: bool,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.path);
+        }
+    };
+
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.id);
         allocator.free(self.title);
@@ -218,7 +232,7 @@ fn fetchImpl(state: *SharedState) !void {
             const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
             if (wait_time > 0) std.Thread.sleep(@intCast(wait_time * std.time.ns_per_ms));
 
-            const url = try std.fmt.allocPrintSentinel(state.allocator, "https://api.themoviedb.org/3/movie/{s}?append_to_response=credits", .{id}, 0);
+            const url = try std.fmt.allocPrintSentinel(state.allocator, "https://api.themoviedb.org/3/movie/{s}?append_to_response=credits,images", .{id}, 0);
             rate_limiter.addRequest(std.time.milliTimestamp()) catch |err| {
                 log.err("rate limited failed to add request! {}", .{err});
                 return err;
@@ -353,6 +367,26 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             });
         }
 
+        var images: std.ArrayList(Data.Image) = .empty;
+
+        inline for (@typeInfo(MovieIDResponse.Images.ImageType).@"enum".fields) |field| {
+            for (@field(response.value.images, field.name)) |img| {
+                const image: MovieIDResponse.Images.Image = img;
+                try images.append(state.allocator, .{
+                    .width = image.width,
+                    .height = image.height,
+                    .path = try state.allocator.dupe(u8, image.file_path),
+                    .image_type = switch (@as(MovieIDResponse.Images.ImageType, @enumFromInt(field.value))) {
+                        .backdrops => .backdrop,
+                        .posters => .poster,
+                        .logos => .logo,
+                    },
+                    // TODO: some default primary logic
+                    .is_primary = false,
+                });
+            }
+        }
+
         state.mutex.lock();
 
         defer state.mutex.unlock();
@@ -364,6 +398,7 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             .runtime_minutes = runtime_minute,
             .description = description,
             .staff = try staff.toOwnedSlice(state.allocator),
+            .images = try images.toOwnedSlice(state.allocator),
         }) catch |err| {
             log.err("failed to append! {}", .{err});
             state.allocator.free(title);
@@ -410,12 +445,16 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
 
     var descriptions = try allocator.alloc(?[]const u8, data.items.len);
 
+    var total_staff_count: usize = 0;
+    var total_image_count: usize = 0;
     for (data.items, 0..) |item, i| {
         ids[i] = item.id;
         titles[i] = item.title;
         dates[i] = item.release_date;
         runtimes[i] = item.runtime_minutes;
         descriptions[i] = item.description;
+        total_staff_count += item.staff.len;
+        total_image_count += item.images.len;
     }
 
     const movies_request: CreateMultipleMovies.Request = .{
@@ -431,9 +470,7 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
         return err;
     };
 
-    var total_staff_count: usize = 0;
-    for (data.items) |movie| total_staff_count += movie.staff.len;
-
+    // TODO: this is madness
     var full_names = try allocator.alloc([]const u8, total_staff_count);
     var bios = try allocator.alloc(?[]const u8, total_staff_count);
     var media_ids = try allocator.alloc([]const u8, total_staff_count);
@@ -442,7 +479,16 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
     var providers = try allocator.alloc([]const u8, total_staff_count);
     var external_ids = try allocator.alloc([]const u8, total_staff_count);
 
+    var image_media_ids = try allocator.alloc([]const u8, total_image_count);
+    var widths = try allocator.alloc(i32, total_image_count);
+    var heights = try allocator.alloc(i32, total_image_count);
+    var image_types = try allocator.alloc(ImageType, total_image_count);
+    var paths = try allocator.alloc([]const u8, total_image_count);
+    var is_primary = try allocator.alloc(bool, total_image_count);
+    var image_providers = try allocator.alloc([]const u8, total_image_count);
+
     var staff_idx: usize = 0;
+    var image_idx: usize = 0;
     for (data.items, 0..) |movie, movie_idx| {
         const db_movie_id = movie_ids.ids[movie_idx];
 
@@ -456,6 +502,16 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
             character_names[staff_idx] = staff_member.character_name;
             external_ids[staff_idx] = try std.fmt.allocPrint(allocator, "{}", .{staff_member.id});
             staff_idx += 1;
+        }
+        for (movie.images) |image| {
+            image_media_ids[image_idx] = db_movie_id;
+            image_providers[image_idx] = "tmdb";
+            widths[image_idx] = image.width;
+            heights[image_idx] = image.height;
+            image_types[image_idx] = image.image_type;
+            paths[image_idx] = image.path;
+            is_primary[image_idx] = image.is_primary;
+            image_idx += 1;
         }
     }
 
@@ -495,8 +551,24 @@ fn handleModel(state: *SharedState, data: std.ArrayList(Data)) !void {
         .person_ids = person_ids,
         .character_names = character_names,
     };
+    CreateMultipleMediaStaff.call(state.database, media_staff_request) catch |err| {
+        log.debug("Couldn't create staff! {}", .{err});
+        return err;
+    };
 
-    try CreateMultipleMediaStaff.call(state.database, media_staff_request);
+    const images_request: CreateMultipleImages.Request = .{
+        .media_ids = image_media_ids,
+        .image_type = image_types,
+        .width = widths,
+        .height = heights,
+        .provider_id = image_providers,
+        .path = paths,
+        .is_primary = is_primary,
+    };
+    CreateMultipleImages.call(state.database, images_request) catch |err| {
+        log.debug("Couldn't create images! {}", .{err});
+        return err;
+    };
 
     const edit_status_request: EditStatus.Request = .{
         .provider = "tmdb",
@@ -544,6 +616,7 @@ const MovieIDResponse = struct {
     vote_average: f32,
     vote_count: i64,
     credits: Credits,
+    images: Images,
 
     pub const Genre = struct {
         id: i64,
@@ -601,11 +674,32 @@ const MovieIDResponse = struct {
             job: []const u8,
         };
     };
+
+    pub const Images = struct {
+        backdrops: []Image,
+        logos: []Image,
+        posters: []Image,
+
+        const ImageType = enum { backdrops, logos, posters };
+
+        pub const Image = struct {
+            aspect_ratio: f32,
+            height: i32,
+            iso_3166_1: ?[]const u8,
+            iso_639_1: ?[]const u8,
+            file_path: []const u8,
+            vote_average: f32,
+            vote_count: u64,
+            width: i32,
+        };
+    };
 };
 
 const RateLimiter = @import("../../rate_limiter.zig").RateLimiter;
 
 const curl = @import("curl");
+
+const ImageType = @import("../../models/content/content.zig").ImageType;
 
 const GetNotCompleted = @import("../../models/collectors/collectors.zig").GetNotCompleted;
 const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").GetNotCompletedCount;
@@ -614,6 +708,7 @@ const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
 const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
 const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
+const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
 
 const Database = @import("../../database.zig").Pool;
 
