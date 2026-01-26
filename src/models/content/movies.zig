@@ -92,15 +92,15 @@ pub const CreateMultiple = struct {
         MismatchedInputLengths,
     } || DatabaseErrors;
 
-    pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors!Response {
+    pub fn call(allocator: Allocator, connection: Connection, request: Request) Errors!Response {
         const len = request.titles.len;
         if (len == 0) return error.RequestTooShort;
         if (request.release_dates.len != len or request.runtime_minutes.len != len or request.descriptions.len != len) {
             return error.MismatchedInputLengths;
         }
 
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+        var conn = try connection.acquire();
+        defer connection.release(conn);
 
         const error_handler = ErrorHandler{ .conn = conn };
 
@@ -142,6 +142,7 @@ const Tests = @import("../../tests/setup.zig");
 const TestSetup = Tests.TestSetup;
 
 const Pool = @import("../../database.zig").Pool;
+const Connection = @import("../../database.zig").Connection;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;
 

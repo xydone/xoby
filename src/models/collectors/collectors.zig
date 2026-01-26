@@ -156,9 +156,9 @@ pub const EditStatus = struct {
         OutOfMemory,
     } || DatabaseErrors;
 
-    pub fn call(database: *Pool, request: Request) Errors!Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
 
         _ = conn.exec(
             query_string,
@@ -192,6 +192,7 @@ const MediaType = @import("../content/content.zig").MediaType;
 
 const Conn = @import("pg").Conn;
 const Pool = @import("../../database.zig").Pool;
+const Connection = @import("../../database.zig").Connection;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;
 

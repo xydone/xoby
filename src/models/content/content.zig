@@ -42,9 +42,9 @@ pub const CreateMultiplePeople = struct {
         OutOfMemory,
     } || DatabaseErrors;
 
-    pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors![]Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(allocator: Allocator, connection: Connection, request: Request) Errors![]Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
 
         const error_handler = ErrorHandler{ .conn = conn };
 
@@ -96,9 +96,9 @@ pub const CreateMultipleMediaStaff = struct {
         MismatchedInputLengths,
     } || DatabaseErrors;
 
-    pub fn call(database: *Pool, request: Request) Errors!Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
 
         const error_handler = ErrorHandler{ .conn = conn };
 
@@ -138,9 +138,9 @@ pub const CreateMultipleImages = struct {
         MismatchedInputLengths,
     } || DatabaseErrors;
 
-    pub fn call(database: *Pool, request: Request) Errors!Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
 
         const error_handler = ErrorHandler{ .conn = conn };
 
@@ -165,6 +165,7 @@ pub const CreateMultipleImages = struct {
 };
 
 const Pool = @import("../../database.zig").Pool;
+const Connection = @import("../../database.zig").Connection;
 
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;

@@ -319,6 +319,11 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
     var timer = try std.time.Timer.start();
     defer log.debug("writing to database took {}", .{timer.lap() / 1_000_000});
 
+    const conn = state.database.acquire() catch return error.CannotAcquireConnection;
+    defer conn.release();
+
+    try conn.begin();
+
     const movies_request: CreateMultipleMovies.Request = .{
         .external_ids = data.items(.id),
         .titles = data.items(.title),
@@ -329,7 +334,7 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
         .providers = data.items(.provider),
     };
 
-    const movie_ids = CreateMultipleMovies.call(allocator, state.database, movies_request) catch |err| {
+    const movie_ids = CreateMultipleMovies.call(allocator, .{ .conn = conn }, movies_request) catch |err| {
         log.err("creating movie failed! {}", .{err});
         return err;
     };
@@ -347,7 +352,7 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
     };
 
     // WARNING: doesn't return duplicates
-    const people_response = CreateMultiplePeople.call(allocator, state.database, staff_request) catch |err| {
+    const people_response = CreateMultiplePeople.call(allocator, .{ .conn = conn }, staff_request) catch |err| {
         log.err("creating staff failed! {}", .{err});
         return err;
     };
@@ -388,7 +393,7 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
         .person_ids = person_ids,
         .character_names = staff.items(.character_name),
     };
-    CreateMultipleMediaStaff.call(state.database, media_staff_request) catch |err| {
+    CreateMultipleMediaStaff.call(.{ .conn = conn }, media_staff_request) catch |err| {
         log.debug("Couldn't create staff! {}", .{err});
         return err;
     };
@@ -414,7 +419,7 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
         .path = images.items(.path),
         .is_primary = images.items(.is_primary),
     };
-    CreateMultipleImages.call(state.database, images_request) catch |err| {
+    CreateMultipleImages.call(.{ .conn = conn }, images_request) catch |err| {
         log.debug("Couldn't create images! {}", .{err});
         return err;
     };
@@ -424,9 +429,14 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
         .external_id = data.items(.id),
         .status = .completed,
     };
-    EditStatus.call(state.database, edit_status_request) catch |err| {
+    EditStatus.call(.{ .conn = conn }, edit_status_request) catch |err| {
         log.err("updating status failed! {}", .{err});
         return err;
+    };
+
+    conn.commit() catch {
+        log.err("Transaction did not go through!", .{});
+        try conn.rollback();
     };
 }
 

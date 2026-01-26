@@ -5,6 +5,26 @@ pub const DatabaseErrors = error{
 };
 
 const log = std.log.scoped(.database);
+
+pub const Connection = union(enum) {
+    database: *Pool,
+    conn: *pg.Conn,
+
+    pub fn acquire(self: Connection) !*pg.Conn {
+        return switch (self) {
+            .database => |db| db.acquire() catch return error.CannotAcquireConnection,
+            .conn => |c| c,
+        };
+    }
+
+    pub fn release(self: Connection, conn: *pg.Conn) void {
+        switch (self) {
+            .database => conn.release(),
+            else => {},
+        }
+    }
+};
+
 pub fn init(allocator: std.mem.Allocator, config: Config) !*Pool {
     const pool = try pg.Pool.init(allocator, .{ .size = 5, .connect = .{
         .port = config.database.port,
