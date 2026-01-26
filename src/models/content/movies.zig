@@ -72,6 +72,8 @@ pub const CreateMultiple = struct {
         release_dates: [][]const u8,
         runtime_minutes: []?i64,
         descriptions: []?[]const u8,
+        providers: [][]const u8,
+        external_ids: [][]const u8,
     };
 
     pub const Response = struct {
@@ -108,6 +110,8 @@ pub const CreateMultiple = struct {
             request.release_dates,
             request.runtime_minutes,
             request.descriptions,
+            request.providers,
+            request.external_ids,
         }) catch |err| {
             if (error_handler.handle(err)) |data| {
                 ErrorHandler.printErr(data);
@@ -131,29 +135,7 @@ pub const CreateMultiple = struct {
         };
     }
 
-    const query_string =
-        \\ WITH input_rows AS (
-        \\ SELECT 
-        \\ id_idx as row_idx,
-        \\ gen_random_uuid () AS new_id,
-        \\ val.title,
-        \\ NULLIF(val.rel_date, '')::date AS release_date,
-        \\ val.runtime::integer AS runtime
-        \\ FROM UNNEST($1::text[], $3::text[], $4::bigint[], $5::text[]) 
-        \\ WITH ORDINALITY AS val(title, rel_date, runtime, description, id_idx)
-        \\ ),
-        \\ inserted_media AS (
-        \\ INSERT INTO content.media_items (id, user_id, title, release_date, media_type)
-        \\ SELECT new_id, $2::uuid, title, release_date, 'movie'::content.media_type
-        \\ FROM input_rows
-        \\ ),
-        \\ inserted_movies AS (
-        \\ INSERT INTO content.movies (media_id, runtime_minutes)
-        \\ SELECT new_id, runtime
-        \\ FROM input_rows
-        \\ )
-        \\ SELECT new_id FROM input_rows ORDER BY row_idx;
-    ;
+    const query_string = @embedFile("queries/create_multiple_movies.sql");
 };
 
 const Tests = @import("../../tests/setup.zig");

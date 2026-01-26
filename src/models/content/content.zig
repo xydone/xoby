@@ -17,59 +17,6 @@ pub const Movies = @import("movies.zig");
 
 const log = std.log.scoped(.content_model);
 
-pub const CreateStaff = struct {
-    pub const Request = struct {
-        full_name: []const u8,
-        bio: ?[]const u8,
-        provider: []const u8,
-        external_id: []const u8,
-        media_id: []const u8,
-        role_name: []const u8,
-        character_name: ?[]const u8,
-    };
-
-    const Response = struct {
-        id: []u8,
-        pub fn deinit(self: @This(), allocator: Allocator) void {
-            allocator.free(self.id);
-        }
-    };
-
-    pub const Errors = error{
-        CouldntCreate,
-        CannotAcquireConnection,
-        MismatchedInputLengths,
-    } || DatabaseErrors;
-
-    pub fn call(allocator: Allocator, database: *Pool, request: Request) Errors!Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
-
-        const error_handler = ErrorHandler{ .conn = conn };
-
-        const row = conn.row(query_string, .{
-            request.full_name,
-            request.bio,
-            request.provider,
-            request.external_id,
-        }) catch |err| {
-            if (error_handler.handle(err)) |data| {
-                ErrorHandler.printErr(data);
-            }
-
-            return error.CouldntCreate;
-        } orelse return error.CouldntCreate;
-
-        const id = row.to([]u8, 0) catch return error.CouldntCreate;
-
-        return .{
-            .id = UUID.toStringAlloc(allocator, id) catch return error.OutOfMemory,
-        };
-    }
-
-    const query_string = @embedFile("./queries/create_staff.sql");
-};
-
 pub const CreateMultiplePeople = struct {
     pub const Request = struct {
         full_names: [][]const u8,

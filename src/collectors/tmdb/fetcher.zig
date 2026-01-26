@@ -63,9 +63,7 @@ fn spawnFetchThread(state: *SharedState) void {
 }
 
 fn fetchImpl(state: *SharedState) !void {
-    var is_true = true;
-    while (is_true) {
-        is_true = false;
+    while (true) {
         const request = GetNotCompleted.Request{
             .provider = "tmdb",
             .limit = state.batch_size,
@@ -218,6 +216,7 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             .title = title,
             .runtime_minutes = runtime_minute,
             .description = description,
+            .provider = "tmdb",
         });
 
         for (response.value.credits.cast) |cast| {
@@ -309,11 +308,13 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
     defer log.debug("writing to database took {}", .{timer.lap() / 1_000_000});
 
     const movies_request: CreateMultipleMovies.Request = .{
+        .external_ids = data.items(.id),
         .titles = data.items(.title),
         .user_id = state.user_id,
         .release_dates = data.items(.release_date),
         .runtime_minutes = data.items(.runtime_minutes),
         .descriptions = data.items(.description),
+        .providers = data.items(.provider),
     };
 
     const movie_ids = CreateMultipleMovies.call(allocator, state.database, movies_request) catch |err| {
@@ -537,6 +538,7 @@ const Movie = struct {
     release_date: []const u8,
     runtime_minutes: ?i64,
     description: ?[]const u8,
+    provider: []const u8,
 
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
         allocator.free(self.id);
@@ -630,7 +632,6 @@ const SharedState = struct {
         }
     }
     fn deinit(self: *SharedState) void {
-        log.info("Finished!", .{});
         self.wg.wait();
         self.pool.deinit();
         self.movie_list.deinit(self.allocator);
