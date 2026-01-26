@@ -6,6 +6,7 @@ const Endpoints = EndpointGroup(.{
     Fetch,
     Active,
     Cancel,
+    MediaStatusDistribution,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
@@ -137,6 +138,54 @@ const Cancel = Endpoint(struct {
         try res.json(response, .{});
     }
 });
+
+const MediaStatusDistribution = Endpoint(struct {
+    const Response = GetDistribution.Response;
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{},
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .admin = true,
+        },
+        .path = "/api/system/collectors/distribution",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const distribution = GetDistribution.call(allocator, ctx.database_pool) catch |err| {
+            log.err("GetDistribution failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+
+        // NOTE: not deinitialized as doing that would return garbage to the client. the arena handles it.
+        var out: std.Io.Writer.Allocating = .init(allocator);
+
+        // hashmap to json
+        var stringify = std.json.Stringify{
+            .writer = &out.writer,
+        };
+
+        try stringify.beginObject();
+
+        var it = distribution.iterator();
+        while (it.next()) |entry| {
+            try stringify.objectField(entry.key_ptr.*);
+            try stringify.write(entry.value_ptr.*);
+        }
+
+        try stringify.endObject();
+
+        res.status = 200;
+
+        res.content_type = httpz.ContentType.JSON;
+        res.body = out.written();
+    }
+});
+
+const GetDistribution = @import("../../../../models/collectors/collectors.zig").GetDistribution;
 
 const Collectors = @import("../../../../collectors/collectors.zig");
 

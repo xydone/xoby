@@ -188,6 +188,67 @@ pub const EditStatus = struct {
     ;
 };
 
+pub const GetDistribution = struct {
+    pub const Distribution = struct {
+        todo: i64,
+        pending: i64,
+        completed: i64,
+        stale: i64,
+    };
+    pub const Response = std.StringHashMap(Distribution);
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    /// Caller must destroy response
+    pub fn call(allocator: Allocator, database: *Pool) Errors!*Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+
+        var query = conn.queryOpts(
+            query_string,
+            .{},
+            .{ .column_names = true },
+        ) catch |err| {
+            const error_handler = ErrorHandler{ .conn = conn };
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var response = allocator.create(Response) catch return error.OutOfMemory;
+        response.* = .init(allocator);
+
+        const DatabaseResponse = struct {
+            provider: []const u8,
+            todo: i64,
+            pending: i64,
+            completed: i64,
+            stale: i64,
+        };
+
+        const mapper = query.mapper(DatabaseResponse, .{ .allocator = allocator });
+        while (mapper.next() catch return error.CannotGet) |db_response| {
+            response.put(db_response.provider, .{
+                .todo = db_response.todo,
+                .pending = db_response.pending,
+                .completed = db_response.completed,
+                .stale = db_response.stale,
+            }) catch return error.OutOfMemory;
+        }
+
+        return response;
+    }
+
+    const query_string = @embedFile("queries/get_distribution.sql");
+};
+
 const MediaType = @import("../content/content.zig").MediaType;
 
 const Conn = @import("pg").Conn;
