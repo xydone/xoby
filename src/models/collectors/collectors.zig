@@ -97,20 +97,7 @@ pub const GetNotCompleted = struct {
         return id_list.toOwnedSlice(allocator);
     }
 
-    const query_string =
-        \\ UPDATE collectors.list
-        \\ SET status = 'pending', updated_at = now()
-        \\ WHERE (provider,external_id) IN (
-        \\ SELECT provider,external_id
-        \\ FROM collectors.list
-        \\ WHERE provider = $1
-        \\ AND status = 'todo'
-        \\ ORDER BY created_at ASC
-        \\ LIMIT $2
-        \\ FOR UPDATE SKIP LOCKED
-        \\ )
-        \\ RETURNING external_id;
-    ;
+    const query_string = @embedFile("queries/get_not_completed.sql");
 };
 
 pub const GetNotCompletedCount = struct {
@@ -152,12 +139,7 @@ pub const GetNotCompletedCount = struct {
         return amount;
     }
 
-    const query_string =
-        \\ SELECT count(*) AS total
-        \\ FROM collectors.list
-        \\ WHERE provider = $1
-        \\ AND status = $2;
-    ;
+    const query_string = @embedFile("queries/get_not_completed_count.sql");
 };
 
 pub const EditStatus = struct {
