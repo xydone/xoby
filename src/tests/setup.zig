@@ -113,6 +113,7 @@ pub const RequestContext = struct {
             .database_pool = test_env.database_pool,
             .redis_client = test_env.redis_client,
             .config = config,
+            .collectors_fetchers = undefined,
         };
     }
 };

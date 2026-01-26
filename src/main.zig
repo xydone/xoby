@@ -16,7 +16,6 @@ pub fn main() !void {
     defer if (is_debug) {
         _ = debug_allocator.deinit();
     };
-    // const allocator = std.heap.c_allocator;
 
     var config = try Config.init(allocator);
     defer config.deinit(allocator);
@@ -27,12 +26,16 @@ pub fn main() !void {
     var redis_client = try redis.Client.init(allocator, config.redis.address, config.redis.port);
     defer redis_client.deinit();
 
-    var handler = Handler{
-        .allocator = allocator,
-        .database_pool = database,
-        .config = config,
-        .redis_client = &redis_client,
-    };
+    try Collectors.init();
+    defer Collectors.deinit();
+
+    var handler = try Handler.init(
+        allocator,
+        database,
+        &redis_client,
+        config,
+    );
+    defer handler.deinit();
 
     var server = try httpz.Server(*Handler).init(allocator, .{
         .port = config.port,
@@ -54,9 +57,6 @@ pub fn main() !void {
             .middlewares = &.{cors},
         },
     );
-
-    try Collectors.init();
-    defer Collectors.deinit();
 
     API.init(router);
 

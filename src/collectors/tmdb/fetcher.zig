@@ -6,8 +6,10 @@ pub const Response = struct {
     total_amount: i64,
 };
 
+/// Callers have the responsibility of registering the active job to the manager.
 pub fn fetch(
     allocator: Allocator,
+    manager: *Manager,
     database: *Database,
     user_id: []const u8,
     api_key: []const u8,
@@ -35,6 +37,7 @@ pub fn fetch(
         .headers = headers,
         .ca_bundle = ca_bundle,
         .batch_size = batch_size,
+        .manager = manager,
     };
 
     try state.pool.init(.{
@@ -53,7 +56,11 @@ pub fn fetch(
     );
     thread.detach();
 
-    return .{ .total_amount = total_amount };
+    try manager.register(state, .tmdb);
+
+    return .{
+        .total_amount = total_amount,
+    };
 }
 
 fn spawnFetchThread(state: *SharedState) void {
@@ -64,16 +71,19 @@ fn spawnFetchThread(state: *SharedState) void {
 
 fn fetchImpl(state: *SharedState) !void {
     while (true) {
+        if (state.is_cancelled.load(.monotonic)) return;
         const request = GetNotCompleted.Request{
             .provider = "tmdb",
             .limit = state.batch_size,
         };
 
+        var handled_id_count: usize = 0;
         const id_list = GetNotCompleted.call(state.allocator, state.database, request) catch |err| {
             log.err("GetNotCompleted failed! {}", .{err});
             return err;
         };
         defer {
+            for (id_list[handled_id_count..]) |id| state.allocator.free(id);
             state.allocator.free(id_list);
         }
 
@@ -87,6 +97,7 @@ fn fetchImpl(state: *SharedState) !void {
         defer rate_limiter.deinit();
 
         for (id_list) |id| {
+            if (state.is_cancelled.load(.monotonic)) return;
             state.checkBackoff();
             const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
             if (wait_time > 0) std.Thread.sleep(@intCast(wait_time * std.time.ns_per_ms));
@@ -104,6 +115,7 @@ fn fetchImpl(state: *SharedState) !void {
                 url,
                 state.headers,
             });
+            handled_id_count += 1;
         }
 
         state.mutex.lock();
@@ -580,7 +592,7 @@ pub const Image = struct {
     }
 };
 
-const SharedState = struct {
+pub const SharedState = struct {
     allocator: Allocator,
     database: *Database,
     user_id: []const u8,
@@ -598,6 +610,9 @@ const SharedState = struct {
     image_list: std.MultiArrayList(Image),
     staff_list: std.MultiArrayList(Staff),
     backoff: std.atomic.Value(i64) = .init(0),
+
+    is_cancelled: std.atomic.Value(bool) = .init(false),
+    manager: *Manager,
 
     fn flushLocked(self: *SharedState) !void {
         if (self.movie_list.len == 0) return;
@@ -633,72 +648,35 @@ const SharedState = struct {
     }
     fn deinit(self: *SharedState) void {
         self.wg.wait();
-        self.pool.deinit();
+
+        // clean up leftover data, in case this is a cancellation deinit
+        var movie_slice = self.movie_list.slice();
+        for (0..movie_slice.len) |i| movie_slice.get(i).deinit(self.allocator);
         self.movie_list.deinit(self.allocator);
-        self.image_list.deinit(self.allocator);
+
+        var staff_slice = self.staff_list.slice();
+        for (0..staff_slice.len) |i| staff_slice.get(i).deinit(self.allocator);
         self.staff_list.deinit(self.allocator);
+
+        var image_slice = self.image_list.slice();
+        for (0..image_slice.len) |i| image_slice.get(i).deinit(self.allocator);
+        self.image_list.deinit(self.allocator);
+
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
+
+        self.pool.deinit();
         self.handle_pool.deinit();
         self.ca_bundle.deinit();
+
         self.allocator.destroy(self.ca_bundle);
         self.allocator.destroy(self);
-    }
-};
-
-const HandlePool = struct {
-    mutex: std.Thread.Mutex = .{},
-    handles: std.ArrayList(*curl.Easy),
-    allocator: std.mem.Allocator,
-
-    fn init(allocator: std.mem.Allocator, size: usize, ca_bundle: std.array_list.Managed(u8)) !HandlePool {
-        var handles = std.ArrayList(*curl.Easy).empty;
-        errdefer {
-            for (handles.items) |h| {
-                h.deinit();
-                allocator.destroy(h);
-            }
-            handles.deinit(allocator);
-        }
-
-        for (0..size) |_| {
-            const h = try allocator.create(curl.Easy);
-            h.* = try curl.Easy.init(.{ .ca_bundle = ca_bundle });
-            try handles.append(allocator, h);
-        }
-
-        return .{
-            .handles = handles,
-            .allocator = allocator,
-        };
-    }
-
-    fn deinit(self: *HandlePool) void {
-        for (self.handles.items) |h| {
-            h.deinit();
-            self.allocator.destroy(h);
-        }
-        self.handles.deinit(self.allocator);
-    }
-
-    fn acquire(self: *HandlePool) ?*curl.Easy {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        return self.handles.pop();
-    }
-
-    fn release(self: *HandlePool, handle: *curl.Easy) !void {
-        handle.reset();
-
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        try self.handles.append(self.allocator, handle);
+        self.manager.unregister(.tmdb);
     }
 };
 
 const RateLimiter = @import("../../rate_limiter.zig").RateLimiter;
-
-const curl = @import("curl");
+const HandlePool = @import("../fetchers.zig").HandlePool;
 
 const ImageType = @import("../../models/content/content.zig").ImageType;
 
@@ -711,7 +689,11 @@ const CreateMultiplePeople = @import("../../models/content/content.zig").CreateM
 const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
 const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
 
+const Manager = @import("../fetchers.zig").Manager;
+
 const Database = @import("../../database.zig").Pool;
+
+const curl = @import("curl");
 
 const Allocator = std.mem.Allocator;
 const std = @import("std");

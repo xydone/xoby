@@ -4,6 +4,32 @@ config: Config,
 /// shouldn't be used unless necessary.
 /// meant for resources that will outlive the response/request arena
 allocator: Allocator,
+collectors_fetchers: *Collectors.Fetchers.Manager,
+
+pub fn init(
+    allocator: Allocator,
+    database_pool: *Database.Pool,
+    redis_client: *redis.Client,
+    config: Config,
+) !Handler {
+    return .{
+        .allocator = allocator,
+        .database_pool = database_pool,
+        .redis_client = redis_client,
+        .config = config,
+        .collectors_fetchers = blk: {
+            const manager = try allocator.create(Collectors.Fetchers.Manager);
+            manager.* = .{};
+            break :blk manager;
+        },
+    };
+}
+
+pub fn deinit(
+    self: Handler,
+) void {
+    self.allocator.destroy(self.collectors_fetchers);
+}
 
 /// Handler is initalized with data, available at handler instantiation, at the main entry point of the program.
 const Handler = @This();
@@ -34,6 +60,7 @@ pub const RequestContext = struct {
     database_pool: *Database.Pool,
     redis_client: *redis.Client,
     config: Config,
+    collectors_fetchers: *Collectors.Fetchers.Manager,
 };
 
 pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *httpz.Request, res: *httpz.Response) !void {
@@ -48,6 +75,7 @@ pub fn dispatch(self: *Handler, action: httpz.Action(*RequestContext), req: *htt
         .database_pool = self.database_pool,
         .redis_client = self.redis_client,
         .config = self.config,
+        .collectors_fetchers = self.collectors_fetchers,
     };
 
     authenticateRequest(allocator, &ctx, req, res) catch {
@@ -260,6 +288,8 @@ pub fn handleResponse(httpz_res: *httpz.Response, response_error: ResponseError,
 
 const Roles = AuthModel.Roles;
 const AuthModel = @import("models/auth/auth.zig");
+
+const Collectors = @import("collectors/collectors.zig");
 
 const redis = @import("redis.zig");
 const Database = @import("database.zig");
