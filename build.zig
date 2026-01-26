@@ -56,6 +56,7 @@ pub fn build(b: *std.Build) void {
         .mbedtls_pthreads = true,
     });
     module.addImport("curl", dep_curl.module("curl"));
+    openapi_module.addImport("curl", dep_curl.module("curl"));
 
     const exe = b.addExecutable(.{
         .name = NAME,
