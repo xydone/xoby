@@ -168,10 +168,6 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
             },
         );
 
-        if (resp.status_code != 200) {
-            log.debug("status code: {}", .{resp.status_code});
-            continue;
-        }
         if (resp.status_code == 429) {
             const base_delay: u64 = @as(u64, 1) << @intCast(attempt);
             const delay_ms = base_delay * 1000;
@@ -188,6 +184,10 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
                 current = state.backoff.cmpxchgStrong(current, new_wait_until, .monotonic, .monotonic) orelse break;
             }
             continue;
+        }
+        if (resp.status_code != 200) {
+            log.debug("status code: {}", .{resp.status_code});
+            break;
         }
 
         var scanner = std.json.Scanner.initCompleteInput(state.allocator, writer.written());
