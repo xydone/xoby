@@ -25,7 +25,7 @@ pub const CreateMultiplePeople = struct {
         external_ids: [][]const u8,
     };
 
-    const Response = struct {
+    pub const Response = struct {
         external_id: []const u8,
         person_id: []const u8,
 

@@ -26,7 +26,7 @@ const Index = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
-        const allocator = ctx.allocator;
+        const allocator = res.arena;
         Collectors.Indexers.fetch(allocator, ctx.database_pool, ctx.config) catch |err| {
             log.err("Refetching indexers failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);

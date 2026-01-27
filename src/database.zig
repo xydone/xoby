@@ -1,4 +1,6 @@
 pub const Pool = pg.Pool;
+pub const Conn = pg.Conn;
+
 pub const DatabaseErrors = error{
     GenericDatabaseError,
     CannotAcquireConnection,

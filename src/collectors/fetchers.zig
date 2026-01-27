@@ -18,7 +18,7 @@ pub const Fetcher = enum { tmdb };
 
 pub const Manager = struct {
     mutex: std.Thread.Mutex = .{},
-    active_tmdb: ?*TMDB.SharedState = null,
+    active_tmdb: ?*TMDB.State = null,
 
     pub fn cancel(self: *Manager, fetcher: Fetcher) void {
         self.mutex.lock();
@@ -34,7 +34,7 @@ pub const Manager = struct {
         }
     }
 
-    pub fn register(self: *Manager, state: *TMDB.SharedState, fetcher: Fetcher) !void {
+    pub fn register(self: *Manager, state: *TMDB.State, fetcher: Fetcher) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
         switch (fetcher) {
@@ -70,7 +70,7 @@ pub fn fetch(
         switch (collector) {
             .tmdb => if (config.collectors.tmdb.enable == false) continue else {
                 const api_key = if (config.collectors.tmdb.api_key) |key| key else continue;
-                const tmdb: ?TMDB.Response = TMDB.fetch(
+                const tmdb: ?TMDB.Response = TMDB.run(
                     allocator,
                     manager,
                     database,

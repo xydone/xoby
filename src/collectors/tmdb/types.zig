@@ -1,4 +1,4 @@
-const MovieIDResponse = struct {
+pub const MovieIDResponse = struct {
     adult: bool,
     backdrop_path: ?[]const u8,
     // belongs_to_collection: struct {
@@ -93,13 +93,13 @@ const MovieIDResponse = struct {
     };
 
     pub const Images = struct {
-        backdrops: []Img,
-        logos: []Img,
-        posters: []Img,
+        backdrops: []Image,
+        logos: []Image,
+        posters: []Image,
 
         const ImageType = enum { backdrops, logos, posters };
 
-        pub const Img = struct {
+        pub const Image = struct {
             aspect_ratio: f32,
             height: i32,
             iso_3166_1: ?[]const u8,
