@@ -15,17 +15,19 @@ pub inline fn deinit() void {
 }
 
 pub const Fetcher = enum { tmdb };
+
 pub const Manager = struct {
     mutex: std.Thread.Mutex = .{},
     active_tmdb: ?*TMDB.SharedState = null,
 
     pub fn cancel(self: *Manager, fetcher: Fetcher) void {
         self.mutex.lock();
-        defer self.mutex.unlock();
         switch (fetcher) {
             .tmdb => {
                 if (self.active_tmdb) |state| {
                     state.is_cancelled.store(true, .monotonic);
+                    self.mutex.unlock();
+                    state.thread.join();
                     self.active_tmdb = null;
                 }
             },

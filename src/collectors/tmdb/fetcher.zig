@@ -24,6 +24,7 @@ pub fn fetch(
     ca_bundle.* = try curl.allocCABundle(allocator);
 
     const handle_pool = try HandlePool.init(allocator, AMOUNT_OF_THREADS, ca_bundle.*);
+
     state.* = SharedState{
         .allocator = allocator,
         .database = database,
@@ -38,7 +39,16 @@ pub fn fetch(
         .ca_bundle = ca_bundle,
         .batch_size = batch_size,
         .manager = manager,
+        .thread = undefined,
     };
+
+    state.thread = try std.Thread.spawn(
+        .{ .allocator = allocator },
+        spawnFetchThread,
+        .{
+            state,
+        },
+    );
 
     try state.pool.init(.{
         .allocator = allocator,
@@ -46,15 +56,6 @@ pub fn fetch(
     });
 
     const total_amount = try GetNotCompletedCount.call(database, .{ .provider = "tmdb", .status = .todo });
-
-    const thread = try std.Thread.spawn(
-        .{ .allocator = allocator },
-        spawnFetchThread,
-        .{
-            state,
-        },
-    );
-    thread.detach();
 
     try manager.register(state, .tmdb);
 
@@ -65,7 +66,6 @@ pub fn fetch(
 
 fn spawnFetchThread(state: *SharedState) void {
     defer state.deinit();
-
     fetchImpl(state) catch {};
 }
 
@@ -78,6 +78,7 @@ fn fetchImpl(state: *SharedState) !void {
         };
 
         var handled_id_count: usize = 0;
+        // the contents of id_list are allocated strings
         const id_list = GetNotCompleted.call(state.allocator, state.database, request) catch |err| {
             log.err("GetNotCompleted failed! {}", .{err});
             return err;
@@ -98,6 +99,7 @@ fn fetchImpl(state: *SharedState) !void {
 
         for (id_list) |id| {
             if (state.is_cancelled.load(.monotonic)) return;
+            handled_id_count += 1;
             state.checkBackoff();
             const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
             if (wait_time > 0) std.Thread.sleep(@intCast(wait_time * std.time.ns_per_ms));
@@ -115,7 +117,6 @@ fn fetchImpl(state: *SharedState) !void {
                 url,
                 state.headers,
             });
-            handled_id_count += 1;
         }
 
         state.mutex.lock();
@@ -123,6 +124,7 @@ fn fetchImpl(state: *SharedState) !void {
 
         state.mutex.unlock();
     }
+    std.debug.print("exited!\n", .{});
 }
 
 fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) void {
@@ -132,7 +134,9 @@ fn spawnRequestThread(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u
 }
 
 fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !void {
+    var id_owned = true;
     defer {
+        if (id_owned) state.allocator.free(id);
         state.wg.finish();
         state.allocator.free(url);
     }
@@ -148,6 +152,8 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
     var attempt: u32 = 0;
 
     while (attempt < max_retries) : (attempt += 1) {
+        if (state.is_cancelled.load(.monotonic)) return;
+
         state.checkBackoff();
 
         var writer = std.Io.Writer.Allocating.init(state.allocator);
@@ -277,7 +283,7 @@ fn handleRequest(state: *SharedState, id: []u8, url: [:0]u8, headers: [:0]u8) !v
         if (state.movie_list.items(.id).len >= state.batch_size) {
             try state.flushLocked();
         }
-
+        id_owned = false;
         // if we are here, congratulations, the request went through
         return;
     }
@@ -608,10 +614,11 @@ pub const SharedState = struct {
     user_id: []const u8,
     requests_per_second: u32,
     batch_size: u32,
-    pool: std.Thread.Pool,
     headers: [:0]u8,
     ca_bundle: *std.array_list.Managed(u8),
 
+    pool: std.Thread.Pool,
+    thread: std.Thread,
     handle_pool: HandlePool,
 
     mutex: std.Thread.Mutex = .{},
@@ -625,6 +632,8 @@ pub const SharedState = struct {
     manager: *Manager,
 
     fn flushLocked(self: *SharedState) !void {
+        if (self.is_cancelled.load(.monotonic)) return;
+
         if (self.movie_list.len == 0) return;
         const movie = self.movie_list;
         self.movie_list = std.MultiArrayList(Movie).empty;
@@ -656,8 +665,12 @@ pub const SharedState = struct {
             std.Thread.sleep(@intCast(diff * std.time.ns_per_ms));
         }
     }
-    fn deinit(self: *SharedState) void {
+    pub fn deinit(self: *SharedState) void {
+        self.is_cancelled.store(true, .monotonic);
+
         self.wg.wait();
+
+        self.pool.deinit();
 
         // clean up leftover data, in case this is a cancellation deinit
         var movie_slice = self.movie_list.slice();
@@ -675,13 +688,11 @@ pub const SharedState = struct {
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
 
-        self.pool.deinit();
         self.handle_pool.deinit();
         self.ca_bundle.deinit();
 
         self.allocator.destroy(self.ca_bundle);
         self.allocator.destroy(self);
-        self.manager.unregister(.tmdb);
     }
 };
 
