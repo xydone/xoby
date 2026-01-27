@@ -164,6 +164,41 @@ pub const CreateMultipleImages = struct {
     const query_string = @embedFile("./queries/create_multiple_images.sql");
 };
 
+pub const CreateMultipleGenres = struct {
+    pub const Request = struct {
+        media_ids: [][]const u8,
+        names: [][]const u8,
+    };
+
+    const Response = void;
+
+    pub const Errors = error{
+        CouldntCreate,
+        CannotAcquireConnection,
+        MismatchedInputLengths,
+    } || DatabaseErrors;
+
+    pub fn call(connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
+
+        const error_handler = ErrorHandler{ .conn = conn };
+
+        _ = conn.exec(query_string, .{
+            request.media_ids,
+            request.names,
+        }) catch |err| {
+            if (error_handler.handle(err)) |data| {
+                ErrorHandler.printErr(data);
+            }
+
+            return error.CouldntCreate;
+        } orelse return error.CouldntCreate;
+    }
+
+    const query_string = @embedFile("./queries/create_multiple_genres.sql");
+};
+
 const Pool = @import("../../database.zig").Pool;
 const Connection = @import("../../database.zig").Connection;
 

@@ -72,6 +72,12 @@ media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
 runtime_minutes INTEGER
 ) ;
 
+CREATE TABLE content.movie_genres (
+name TEXT NOT NULL,
+media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+UNIQUE (name, media_id)
+) ;
+
 CREATE TABLE content.books (
 media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
 page_count INTEGER

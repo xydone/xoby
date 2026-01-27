@@ -35,6 +35,7 @@ pub fn fetch(
         .movie_list = std.MultiArrayList(Movie).empty,
         .staff_list = std.MultiArrayList(Staff).empty,
         .image_list = std.MultiArrayList(Image).empty,
+        .genre_list = std.MultiArrayList(Genre).empty,
         .headers = headers,
         .ca_bundle = ca_bundle,
         .batch_size = batch_size,
@@ -283,6 +284,14 @@ fn handleRequest(state: *SharedState, wg: *std.Thread.WaitGroup, id: []u8, url: 
                 });
             }
         }
+
+        for (response.value.genres) |genre| {
+            try state.genre_list.append(state.allocator, .{
+                .name = try state.allocator.dupe(u8, genre.name),
+                .media_id = id,
+            });
+        }
+
         if (state.movie_list.items(.id).len >= state.batch_size) {
             try state.flushLocked();
         }
@@ -293,29 +302,35 @@ fn handleRequest(state: *SharedState, wg: *std.Thread.WaitGroup, id: []u8, url: 
     log.err("Giving up on {s} after {} tries", .{ url, attempt });
 }
 
-fn spawnModelThread(state: *SharedState, movie: std.MultiArrayList(Movie), staff: std.MultiArrayList(Staff), images: std.MultiArrayList(Image)) void {
-    handleModel(state, movie, staff, images) catch |err| {
+fn spawnModelThread(
+    state: *SharedState,
+    movie: std.MultiArrayList(Movie),
+    staff: std.MultiArrayList(Staff),
+    images: std.MultiArrayList(Image),
+    genres: std.MultiArrayList(Genre),
+) void {
+    handleModel(state, movie, staff, images, genres) catch |err| {
         log.err("model failed! {}", .{err});
     };
 }
-fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.MultiArrayList(Staff), images: std.MultiArrayList(Image)) !void {
+fn handleModel(
+    state: *SharedState,
+    data: std.MultiArrayList(Movie),
+    staff: std.MultiArrayList(Staff),
+    images: std.MultiArrayList(Image),
+    genres: std.MultiArrayList(Genre),
+) !void {
     defer {
         defer state.wg.finish();
-        {
-            var mutable_data = data;
-            const sl = data.slice();
-            for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
-            mutable_data.deinit(state.allocator);
-        }
-        {
-            var mutable_data = staff;
-            const sl = staff.slice();
-            for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
-            mutable_data.deinit(state.allocator);
-        }
-        {
-            var mutable_data = images;
-            const sl = images.slice();
+        const items = .{
+            data,
+            staff,
+            images,
+            genres,
+        };
+        inline for (items) |item| {
+            var mutable_data = item;
+            const sl = item.slice();
             for (0..sl.len) |i| sl.get(i).deinit(state.allocator);
             mutable_data.deinit(state.allocator);
         }
@@ -433,6 +448,28 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
         return err;
     };
 
+    const genre_image_ids = blk: {
+        const ids = try allocator.alloc([]const u8, genres.len);
+
+        for (genres.items(.media_id), 0..) |external_id, i| {
+            ids[i] = external_media_id_to_db_id.get(external_id) orelse {
+                log.debug("Genre: Movie {s} doesnt have an id inside the map!", .{external_id});
+                return error.MovieNotInsideMap;
+            };
+        }
+        break :blk ids;
+    };
+
+    const genres_request: CreateMultipleGenres.Request = .{
+        .media_ids = genre_image_ids,
+        .names = genres.items(.name),
+    };
+
+    CreateMultipleGenres.call(.{ .conn = conn }, genres_request) catch |err| {
+        log.debug("Couldn't create genres! {}", .{err});
+        return err;
+    };
+
     const edit_status_request: EditStatus.Request = .{
         .provider = "tmdb",
         .external_id = data.items(.id),
@@ -451,6 +488,7 @@ fn handleModel(state: *SharedState, data: std.MultiArrayList(Movie), staff: std.
 
 /// Trimmed down version of the original schema (located in ./types.zig) which contains only the information we need
 const MovieIDResponse = struct {
+    genres: []MovieIDResponse.Genre,
     overview: []const u8,
     release_date: []const u8,
     runtime: i64,
@@ -491,6 +529,11 @@ const MovieIDResponse = struct {
             file_path: []const u8,
             width: i32,
         };
+    };
+
+    pub const Genre = struct {
+        id: i64,
+        name: []const u8,
     };
 };
 
@@ -542,6 +585,15 @@ pub const Image = struct {
     }
 };
 
+pub const Genre = struct {
+    name: []const u8,
+    /// The TMDB ID of the movie the staff participates in
+    media_id: []const u8,
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.name);
+    }
+};
+
 pub const SharedState = struct {
     allocator: Allocator,
     database: *Database,
@@ -560,6 +612,7 @@ pub const SharedState = struct {
     movie_list: std.MultiArrayList(Movie),
     image_list: std.MultiArrayList(Image),
     staff_list: std.MultiArrayList(Staff),
+    genre_list: std.MultiArrayList(Genre),
     backoff: std.atomic.Value(i64) = .init(0),
 
     is_cancelled: std.atomic.Value(bool) = .init(false),
@@ -578,12 +631,16 @@ pub const SharedState = struct {
         const staff = self.staff_list;
         self.staff_list = std.MultiArrayList(Staff).empty;
 
+        const genre = self.genre_list;
+        self.genre_list = std.MultiArrayList(Genre).empty;
+
         self.wg.start();
         self.pool.spawn(spawnModelThread, .{
             self,
             movie,
             staff,
             image,
+            genre,
         }) catch |err| {
             self.wg.finish();
             return err;
@@ -607,17 +664,17 @@ pub const SharedState = struct {
         self.pool.deinit();
 
         // clean up leftover data, in case this is a cancellation deinit
-        var movie_slice = self.movie_list.slice();
-        for (0..movie_slice.len) |i| movie_slice.get(i).deinit(self.allocator);
-        self.movie_list.deinit(self.allocator);
-
-        var staff_slice = self.staff_list.slice();
-        for (0..staff_slice.len) |i| staff_slice.get(i).deinit(self.allocator);
-        self.staff_list.deinit(self.allocator);
-
-        var image_slice = self.image_list.slice();
-        for (0..image_slice.len) |i| image_slice.get(i).deinit(self.allocator);
-        self.image_list.deinit(self.allocator);
+        const items = .{
+            &self.movie_list,
+            &self.staff_list,
+            &self.image_list,
+            &self.genre_list,
+        };
+        inline for (items) |item| {
+            var movie_slice = item.slice();
+            for (0..movie_slice.len) |i| movie_slice.get(i).deinit(self.allocator);
+            item.deinit(self.allocator);
+        }
 
         self.allocator.free(self.headers);
         self.allocator.free(self.user_id);
@@ -640,6 +697,7 @@ const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").G
 const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
 
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
+const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
 const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
 const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
 const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
