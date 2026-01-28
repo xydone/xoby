@@ -37,7 +37,7 @@ pub const GetInformation = struct {
 
         /// book specific fields
         pub const BookData = struct {
-            page_count: ?i32,
+            total_pages: ?i32,
 
             pub fn deinit(self: BookData, allocator: Allocator) void {
                 _ = self;
@@ -94,7 +94,7 @@ pub const GetInformation = struct {
             // movie specific fields
             runtime_minutes: ?i64,
             // book specific fields
-            page_count: ?i32,
+            total_pages: ?i32,
         };
 
         const response = row.to(DatabaseResponse, .{ .allocator = allocator }) catch |err| {
@@ -119,7 +119,7 @@ pub const GetInformation = struct {
                 .book => blk: {
                     break :blk .{
                         .book = .{
-                            .page_count = response.page_count,
+                            .total_pages = response.total_pages,
                         },
                     };
                 },
@@ -135,7 +135,7 @@ pub const GetInformation = struct {
         \\ m.release_date,
         \\ m.cover_image_url,
         \\ mov.runtime_minutes,
-        \\ bk.page_count
+        \\ bk.total_pages
         \\ FROM content.media_items m
         \\ LEFT JOIN content.movies mov ON m.id = mov.media_id AND m.media_type = 'movie'
         \\ LEFT JOIN content.books bk ON m.id = bk.media_id AND m.media_type = 'book'

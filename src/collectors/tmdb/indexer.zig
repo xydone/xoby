@@ -14,7 +14,7 @@ const IngestType = enum { file, request };
 
 const AMOUNT_OF_PREALLOCATED_DATA = 500_000;
 
-pub fn fetch(allocator: Allocator, database: *Database, absolute_path: []const u8) !void {
+pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8) !void {
     const Model = CollectorsModel.Create;
 
     var id_list = try std.ArrayList(i64).initCapacity(allocator, AMOUNT_OF_PREALLOCATED_DATA);

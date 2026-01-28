@@ -11,7 +11,7 @@ const Create = Endpoint(struct {
     const Body = struct {
         title: []const u8,
         release_date: ?[]const u8 = null,
-        page_count: ?i32 = null,
+        total_pages: ?i32 = null,
         publisher: ?[]const u8 = null,
         description: ?[]const u8 = null,
     };
@@ -41,7 +41,7 @@ const Create = Endpoint(struct {
             .title = req.body.title,
             .user_id = ctx.user_id.?,
             .release_date = req.body.release_date,
-            .page_count = req.body.page_count,
+            .total_pages = req.body.total_pages,
             .description = req.body.description,
         };
 

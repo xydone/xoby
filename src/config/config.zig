@@ -33,6 +33,7 @@ const Redis = struct {
 
 pub const Collectors = struct {
     tmdb: TMDB,
+    mangabaka: MangaBaka,
 
     pub const TMDB = struct {
         enable: bool,
@@ -47,12 +48,22 @@ pub const Collectors = struct {
         }
     };
 
+    pub const MangaBaka = struct {
+        enable: bool,
+        database_path: ?[]const u8,
+        batch_size: u32,
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            if (self.database_path) |p| allocator.free(p);
+        }
+    };
+
     pub fn deinit(self: @This(), allocator: Allocator) void {
         self.tmdb.deinit(allocator);
+        self.mangabaka.deinit(allocator);
     }
 };
 
-const path = "config/config.zon";
+const CONFIG_PATH = "config/config.zon";
 const log = std.log.scoped(.config);
 
 const Config = @This();
@@ -78,7 +89,7 @@ pub const InitErrors = error{
 pub fn init(allocator: Allocator) InitErrors!Config {
     // WARNING: the config file is freed at the end of the scope.
     // You must guarantee that the values that leave the scope do not depend on values that will be freed.
-    const config_file = readFileZon(ConfigFile, allocator, path, 1024 * 5) catch |err| {
+    const config_file = readFileZon(ConfigFile, allocator, CONFIG_PATH, 1024 * 5) catch |err| {
         log.err("readFileZon failed with {}", .{err});
         return error.CouldntReadFile;
     };
@@ -148,6 +159,35 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                 },
                 .requests_per_second = config_file.collectors.tmdb.requests_per_second,
                 .batch_size = config_file.collectors.tmdb.batch_size,
+            },
+            .mangabaka = blk: {
+                const config = config_file.collectors.mangabaka;
+
+                if (!config.enable) {
+                    break :blk .{
+                        .enable = false,
+                        .database_path = null,
+                        .batch_size = 0,
+                    };
+                }
+
+                // if enabled, make sure that the path exists
+                if (config.database_path) |p| {
+                    const path = allocator.dupe(u8, p) catch return error.OutOfMemory;
+                    break :blk .{
+                        .enable = true,
+                        .database_path = path,
+                        .batch_size = config.batch_size,
+                    };
+                } else {
+                    // mangabaka was enabled, but database_path was not present.
+                    log.warn("Collector \"MangaBaka\" is enabled, but database_path is missing. The collector is disabled.", .{});
+                    break :blk .{
+                        .enable = false,
+                        .database_path = null,
+                        .batch_size = 0,
+                    };
+                }
             },
         },
     };

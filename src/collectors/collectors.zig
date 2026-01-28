@@ -8,4 +8,4 @@ pub inline fn deinit() void {
 
 pub const Indexers = @import("indexers.zig");
 pub const Fetchers = @import("fetchers.zig");
-pub const Collector = enum { tmdb };
+pub const Collector = enum { tmdb, mangabaka };

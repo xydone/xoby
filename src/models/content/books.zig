@@ -3,7 +3,7 @@ pub const Create = struct {
         title: []const u8,
         user_id: []const u8,
         release_date: ?[]const u8,
-        page_count: ?i32,
+        total_pages: ?i32,
         description: ?[]const u8,
     };
 
@@ -31,7 +31,7 @@ pub const Create = struct {
             request.title,
             request.user_id,
             request.release_date,
-            request.page_count,
+            request.total_pages,
             request.description,
         }) catch |err| {
             const error_data = error_handler.handle(err);
@@ -58,7 +58,7 @@ pub const Create = struct {
         \\   VALUES ($1, $2, $3::date, 'book', $5)
         \\   RETURNING id, title
         \\ )
-        \\ INSERT INTO content.books (media_id, page_count)
+        \\ INSERT INTO content.books (media_id, total_pages)
         \\ VALUES ((SELECT id FROM new_media), $4)
         \\ RETURNING (SELECT id FROM new_media), (SELECT title FROM new_media);
     ;

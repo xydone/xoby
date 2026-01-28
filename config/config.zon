@@ -42,5 +42,19 @@
             // Bigger batches mean less frequent writes to disk, but more memory usage.
             .batch_size = 1_000,
         },
+        // MangaBaka
+        // https://mangabaka.org
+        .mangabaka = .{
+            // Whether or not to enable the collector.
+            // Further configurations will not be refered to by Xoby if this is false.
+            .enable = false,
+            // Where should the server look for the database dump
+            // https://mangabaka.org/database
+            // IMPORTANT: Xoby will only look for .jsonl files
+            .database_path = null,
+            // The collector writes to the database in batches. This value specifies how big the batches should be.
+            // Bigger batches mean less frequent writes to disk, but more memory usage.
+            .batch_size = 5_000,
+        },
     },
 }

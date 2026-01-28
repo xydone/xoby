@@ -107,7 +107,7 @@ const Active = Endpoint(struct {
 
 const Cancel = Endpoint(struct {
     const Body = struct {
-        fetchers: []Collectors.Fetchers.Fetcher,
+        collectors: []Collectors.Collector,
     };
     const Response = struct {
         tmdb: bool,
@@ -126,8 +126,8 @@ const Cancel = Endpoint(struct {
     };
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
-        for (req.body.fetchers) |fetcher| {
-            ctx.collectors_fetchers.cancel(fetcher);
+        for (req.body.collectors) |collector| {
+            ctx.collectors_fetchers.cancel(collector);
         }
 
         const response: Response = .{

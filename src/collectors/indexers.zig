@@ -6,7 +6,7 @@ pub fn fetch(
     config: Config,
 ) !void {
     if (config.collectors.tmdb.enable) {
-        TMDB.fetch(allocator, database, config.collectors.tmdb.indexer_path.?) catch |err| {
+        TMDB.call(allocator, database, config.collectors.tmdb.indexer_path.?) catch |err| {
             log.err("TMDB failed! {}", .{err});
         };
     }

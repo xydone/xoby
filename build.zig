@@ -58,6 +58,10 @@ pub fn build(b: *std.Build) void {
     module.addImport("curl", dep_curl.module("curl"));
     openapi_module.addImport("curl", dep_curl.module("curl"));
 
+    const zimdjson = b.dependency("zimdjson", .{});
+    module.addImport("zimdjson", zimdjson.module("zimdjson"));
+    openapi_module.addImport("zimdjson", zimdjson.module("zimdjson"));
+
     const exe = b.addExecutable(.{
         .name = NAME,
         .root_module = module,

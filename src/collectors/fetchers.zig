@@ -1,6 +1,7 @@
 const log = std.log.scoped(.fetchers);
 
 pub const TMDB = @import("tmdb/tmdb.zig").Fetcher;
+pub const MangaBaka = @import("mangabaka/mangabaka.zig").Fetcher;
 
 const Response = struct {
     tmdb: ?TMDB.Response = null,
@@ -14,15 +15,13 @@ pub inline fn deinit() void {
     curl.globalDeinit();
 }
 
-pub const Fetcher = enum { tmdb };
-
 pub const Manager = struct {
     mutex: std.Thread.Mutex = .{},
     active_tmdb: ?*TMDB.State = null,
 
-    pub fn cancel(self: *Manager, fetcher: Fetcher) void {
+    pub fn cancel(self: *Manager, collector: Collector) void {
         self.mutex.lock();
-        switch (fetcher) {
+        switch (collector) {
             .tmdb => {
                 if (self.active_tmdb) |state| {
                     state.is_cancelled.store(true, .monotonic);
@@ -31,28 +30,31 @@ pub const Manager = struct {
                     self.active_tmdb = null;
                 }
             },
+            .mangabaka => {},
         }
     }
 
-    pub fn register(self: *Manager, state: *TMDB.State, fetcher: Fetcher) !void {
+    pub fn register(self: *Manager, state: *TMDB.State, collector: Collector) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        switch (fetcher) {
+        switch (collector) {
             .tmdb => {
                 if (self.active_tmdb != null) return error.AlreadyRunning;
                 self.active_tmdb = state;
             },
+            .mangabaka => {},
         }
     }
 
     /// WARNING: Does not set is_cancelled to false, all it does is null the pointer
-    pub fn unregister(self: *Manager, fetcher: Fetcher) void {
+    pub fn unregister(self: *Manager, collector: Collector) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        switch (fetcher) {
+        switch (collector) {
             .tmdb => {
                 self.active_tmdb = null;
             },
+            .mangabaka => {},
         }
     }
 };
@@ -68,7 +70,7 @@ pub fn fetch(
     var response: Response = .{};
     for (collectors) |collector| {
         switch (collector) {
-            .tmdb => if (config.collectors.tmdb.enable == false) continue else {
+            .tmdb => if (config.collectors.tmdb.enable) {
                 const api_key = if (config.collectors.tmdb.api_key) |key| key else continue;
                 const tmdb: ?TMDB.Response = TMDB.run(
                     allocator,
@@ -83,6 +85,18 @@ pub fn fetch(
                     continue;
                 };
                 response.tmdb = tmdb;
+            },
+            .mangabaka => if (config.collectors.mangabaka.enable) {
+                MangaBaka.call(
+                    allocator,
+                    database,
+                    config.collectors.mangabaka.database_path.?,
+                    user_id,
+                    config.collectors.mangabaka.batch_size,
+                ) catch |err| {
+                    log.err("MangaBaka failed! {}", .{err});
+                    continue;
+                };
             },
         }
     }

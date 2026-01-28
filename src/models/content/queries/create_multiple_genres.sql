@@ -1,5 +1,5 @@
 INSERT INTO
-  content.movie_genres (media_id, name)
+  content.media_genres (media_id, name)
 SELECT
   media_id,
   genre_name

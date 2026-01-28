@@ -72,7 +72,7 @@ media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
 runtime_minutes INTEGER
 ) ;
 
-CREATE TABLE content.movie_genres (
+CREATE TABLE content.media_genres (
 name TEXT NOT NULL,
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
 UNIQUE (name, media_id)
@@ -80,9 +80,14 @@ UNIQUE (name, media_id)
 
 CREATE TABLE content.books (
 media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
-page_count INTEGER
+total_pages INTEGER
 ) ;
 
+
+CREATE TABLE content.manga (
+media_id uuid PRIMARY KEY REFERENCES content.media_items (id) ON DELETE CASCADE,
+total_chapters INTEGER
+) ;
 
 CREATE TABLE content.external_mappings (
 media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,

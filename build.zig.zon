@@ -27,6 +27,10 @@
             .url = "git+https://github.com/jiacai2050/zig-curl#357de595715cb43dcaadd4c0c9969954f93dd72d",
             .hash = "curl-0.3.2-P4tT4b7qAABL2C-0O03gN87EuRjS-cyuG6OERabeMNY-",
         },
+        .zimdjson = .{
+            .url = "git+https://github.com/xydone/zimdjson?ref=0.15.x#b908f3abc02973a888f624d82fc1ab6a15d5e23a",
+            .hash = "zimdjson-0.2.0-89pgxfMsBgBOeqNE6cpBXsTcIMpalLUYauR73v7yihyd",
+        },
     },
 
     .paths = .{
