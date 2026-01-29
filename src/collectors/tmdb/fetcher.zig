@@ -74,13 +74,21 @@ const Fetch = struct {
     pub fn callSupressError(request: Req) void {
         defer request.state.deinit();
         call(request) catch |err| {
-            log.err("Fetch failed! {}", .{err});
+            switch (err) {
+                // if it was cancelled, exit early and do not unregister
+                error.Cancelled => return,
+                else => log.err("Fetch failed! {}", .{err}),
+            }
         };
+
+        // this will only be reached if the cancellation was reached "naturally" (end of stream)
+        // or non-cancellation error
+        request.state.manager.unregister(.tmdb);
     }
 
     pub fn call(request: Req) !void {
         while (true) {
-            if (request.state.is_cancelled.load(.monotonic)) return;
+            if (request.state.is_cancelled.load(.monotonic)) return error.Cancelled;
 
             var batch_wg: std.Thread.WaitGroup = .{};
             const not_completed_request = GetNotCompleted.Request{
@@ -109,7 +117,7 @@ const Fetch = struct {
             defer rate_limiter.deinit();
 
             for (id_list) |id| {
-                if (request.state.is_cancelled.load(.monotonic)) return;
+                if (request.state.is_cancelled.load(.monotonic)) return error.Cancelled;
                 handled_id_count += 1;
                 request.state.checkBackoff();
                 const wait_time = rate_limiter.waitTime(std.time.milliTimestamp());
@@ -175,7 +183,7 @@ const Request = struct {
         var attempt: u32 = 0;
 
         while (attempt < max_retries) : (attempt += 1) {
-            if (request.state.is_cancelled.load(.monotonic)) return;
+            if (request.state.is_cancelled.load(.monotonic)) return error.Cancelled;
 
             request.state.checkBackoff();
 
@@ -699,7 +707,7 @@ pub const State = struct {
     manager: *Manager,
 
     fn flushLocked(self: *State) !void {
-        if (self.is_cancelled.load(.monotonic)) return;
+        if (self.is_cancelled.load(.monotonic)) return error.Cancelled;
 
         if (self.movie_list.len == 0) return;
 

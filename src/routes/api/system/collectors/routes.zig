@@ -74,6 +74,7 @@ const Fetch = Endpoint(struct {
 
         const response: Response = .{
             .tmdb = fetch_response.tmdb,
+            .mangabaka = fetch_response.mangabaka,
         };
 
         res.status = 200;

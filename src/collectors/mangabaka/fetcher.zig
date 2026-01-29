@@ -81,7 +81,6 @@ const Fetch = struct {
 
         var i: u64 = 0;
         while (reader.interface.streamDelimiter(&writer.writer, '\n')) |_| : (i += 1) {
-            log.debug("i: {}", .{i});
             defer writer.clearRetainingCapacity();
             if (request.state.is_cancelled.load(.monotonic)) return error.Cancelled;
             if (i == request.state.batch_size) {
