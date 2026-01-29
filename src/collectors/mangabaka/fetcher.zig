@@ -34,6 +34,7 @@ pub fn call(
 
     var i: u64 = 0;
     while (reader.interface.streamDelimiter(&writer.writer, '\n')) |_| : (i += 1) {
+        defer writer.clearRetainingCapacity();
         if (i == batch_size) {
             i = 0;
             const request: CreateManyManga.Request = .{
@@ -48,8 +49,8 @@ pub fn call(
             data.clearRetainingCapacity();
             _ = arena.reset(.retain_capacity);
         }
-        defer writer.clearRetainingCapacity();
-        const document: Parser.Document = parser.parseFromReader(allocator, &reader.interface) catch |err| {
+        reader.interface.toss(1);
+        const document: Parser.Document = parser.parseFromSlice(allocator, writer.written()) catch |err| {
             log.err("Parser failed! {}", .{err});
             return err;
         };
@@ -85,7 +86,7 @@ pub fn call(
             .description = description,
             .total_chapters = total_chapters,
         });
-    } else |_| {}
+    } else |err| log.err("encountered {}", .{err});
     // check if there have been any leftovers
     if (data.len != 0) {
         const request: CreateManyManga.Request = .{
@@ -102,7 +103,7 @@ pub fn call(
 const CreateManyManga = @import("../../models/content/manga/manga.zig").CreateMany;
 const Pool = @import("../../database.zig").Pool;
 
-const Parser = zimdjson.ondemand.StreamParser(.default);
+const Parser = zimdjson.ondemand.FullParser(.default);
 const zimdjson = @import("zimdjson");
 
 const Allocator = std.mem.Allocator;
