@@ -60,7 +60,7 @@ pub fn run(
 
     const total_amount = try GetNotCompletedCount.call(database, .{ .provider = "tmdb", .status = .todo });
 
-    try manager.register(state, .tmdb);
+    try manager.register(.tmdb, state);
 
     return .{
         .total_amount = total_amount,

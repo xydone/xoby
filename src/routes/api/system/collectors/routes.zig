@@ -1,4 +1,4 @@
-// TODO: rethink the way the terms collectors and fetchers are used interchangeably.
+// TODO: a lot of duplication in response types, also present inside the collector file
 const log = std.log.scoped(.collectors_route);
 
 const Endpoints = EndpointGroup(.{
@@ -42,6 +42,7 @@ const Fetch = Endpoint(struct {
     };
     const Response = struct {
         tmdb: ?Collectors.Fetchers.TMDB.Response = null,
+        mangabaka: bool = false,
     };
 
     pub const endpoint_data: EndpointData = .{
@@ -83,6 +84,7 @@ const Fetch = Endpoint(struct {
 const Active = Endpoint(struct {
     const Response = struct {
         tmdb: bool,
+        mangabaka: bool,
     };
 
     pub const endpoint_data: EndpointData = .{
@@ -98,6 +100,7 @@ const Active = Endpoint(struct {
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const response: Response = .{
             .tmdb = if (ctx.collectors_fetchers.active_tmdb) |_| true else false,
+            .mangabaka = if (ctx.collectors_fetchers.active_mangabaka) |_| true else false,
         };
 
         res.status = 200;
@@ -111,6 +114,7 @@ const Cancel = Endpoint(struct {
     };
     const Response = struct {
         tmdb: bool,
+        mangabaka: bool,
     };
 
     pub const endpoint_data: EndpointData = .{
@@ -132,6 +136,7 @@ const Cancel = Endpoint(struct {
 
         const response: Response = .{
             .tmdb = if (ctx.collectors_fetchers.active_tmdb) |_| true else false,
+            .mangabaka = if (ctx.collectors_fetchers.active_mangabaka) |_| true else false,
         };
 
         res.status = 200;

@@ -5,6 +5,7 @@ pub const MangaBaka = @import("mangabaka/mangabaka.zig").Fetcher;
 
 const Response = struct {
     tmdb: ?TMDB.Response = null,
+    mangabaka: bool = false,
 };
 
 pub inline fn init() !void {
@@ -18,23 +19,37 @@ pub inline fn deinit() void {
 pub const Manager = struct {
     mutex: std.Thread.Mutex = .{},
     active_tmdb: ?*TMDB.State = null,
+    active_mangabaka: ?*MangaBaka.State = null,
 
     pub fn cancel(self: *Manager, collector: Collector) void {
         self.mutex.lock();
+        defer self.mutex.unlock();
         switch (collector) {
             .tmdb => {
                 if (self.active_tmdb) |state| {
                     state.is_cancelled.store(true, .monotonic);
-                    self.mutex.unlock();
                     state.thread.join();
                     self.active_tmdb = null;
                 }
             },
-            .mangabaka => {},
+            .mangabaka => {
+                if (self.active_mangabaka) |state| {
+                    state.is_cancelled.store(true, .monotonic);
+                    state.thread.join();
+                    self.active_mangabaka = null;
+                }
+            },
         }
     }
 
-    pub fn register(self: *Manager, state: *TMDB.State, collector: Collector) !void {
+    pub fn register(
+        self: *Manager,
+        comptime collector: Collector,
+        state: *switch (collector) {
+            .tmdb => TMDB.State,
+            .mangabaka => MangaBaka.State,
+        },
+    ) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
         switch (collector) {
@@ -42,7 +57,10 @@ pub const Manager = struct {
                 if (self.active_tmdb != null) return error.AlreadyRunning;
                 self.active_tmdb = state;
             },
-            .mangabaka => {},
+            .mangabaka => {
+                if (self.active_mangabaka != null) return error.AlreadyRunning;
+                self.active_mangabaka = state;
+            },
         }
     }
 
@@ -54,7 +72,9 @@ pub const Manager = struct {
             .tmdb => {
                 self.active_tmdb = null;
             },
-            .mangabaka => {},
+            .mangabaka => {
+                self.active_mangabaka = null;
+            },
         }
     }
 };
@@ -87,16 +107,18 @@ pub fn fetch(
                 response.tmdb = tmdb;
             },
             .mangabaka => if (config.collectors.mangabaka.enable) {
-                MangaBaka.call(
+                MangaBaka.run(
                     allocator,
                     database,
                     config.collectors.mangabaka.database_path.?,
                     user_id,
                     config.collectors.mangabaka.batch_size,
+                    manager,
                 ) catch |err| {
                     log.err("MangaBaka failed! {}", .{err});
                     continue;
                 };
+                response.mangabaka = true;
             },
         }
     }
