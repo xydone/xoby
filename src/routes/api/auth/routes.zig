@@ -117,7 +117,7 @@ const Login = Endpoint(struct {
 
 const CreateAPIKey = Endpoint(struct {
     const Body = struct {
-        permissions: AuthModel.Roles,
+        permissions: AuthModel.Role,
     };
     const Response = struct {
         api_key: []const u8,
@@ -209,13 +209,13 @@ const Refresh = Endpoint(struct {
 const EditUserRole = Endpoint(struct {
     const Body = struct {
         target_user_id: []const u8,
-        role: AuthModel.Roles,
+        role: AuthModel.Role,
     };
     const Response = struct {
         id: []const u8,
         display_name: []const u8,
         username: []const u8,
-        role: AuthModel.Roles,
+        role: AuthModel.Role,
     };
     pub const endpoint_data: EndpointData = .{
         .Request = .{

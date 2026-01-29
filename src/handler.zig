@@ -55,7 +55,7 @@ pub const RequestContext = struct {
     /// meant for resources that will outlive the response/request arena
     allocator: Allocator,
     user_id: ?[]const u8,
-    user_role: ?Roles,
+    user_role: ?Role,
     refresh_token: ?[]const u8,
     database_pool: *Database.Pool,
     redis_client: *redis.Client,
@@ -286,7 +286,7 @@ pub fn handleResponse(httpz_res: *httpz.Response, response_error: ResponseError,
     return;
 }
 
-const Roles = AuthModel.Roles;
+const Role = AuthModel.Role;
 const AuthModel = @import("models/auth/auth.zig");
 
 const Collectors = @import("collectors/collectors.zig");

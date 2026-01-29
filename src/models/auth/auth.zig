@@ -1,11 +1,11 @@
 const log = std.log.scoped(.auth_model);
 
-pub const Roles = enum { user, admin };
+pub const Role = enum { user, admin };
 
 /// what is stored on redis
 const UserSession = struct {
     id: []const u8,
-    role: Roles,
+    role: Role,
 };
 
 const ACCESS_TOKEN_EXPIRY = 15 * 60;
@@ -20,6 +20,7 @@ pub const CreateUser = struct {
         display_name: []const u8,
         username: []const u8,
         password: []const u8,
+        role: Role = .user,
     };
     pub const Response = struct {
         id: []const u8,
@@ -45,7 +46,12 @@ pub const CreateUser = struct {
 
         const hashed_password = hashPassword(allocator, request.password) catch return error.HashingError;
         defer allocator.free(hashed_password);
-        var row = conn.row(query_string, .{ request.display_name, request.username, hashed_password }) catch |err| {
+        var row = conn.row(query_string, .{
+            request.display_name,
+            request.username,
+            request.role,
+            hashed_password,
+        }) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
                 if (data.isUnique()) return Errors.UsernameNotUnique;
@@ -66,7 +72,7 @@ pub const CreateUser = struct {
             .username = username,
         };
     }
-    const query_string = "INSERT INTO auth.users (display_name, username, password) VALUES ($1,$2,$3) returning id,display_name,username";
+    const query_string = @embedFile("queries/create_user.sql");
 };
 
 pub const DeleteUser = struct {
@@ -141,7 +147,7 @@ pub const CreateToken = struct {
 
         const hash = row.get([]u8, 1);
 
-        const role = row.get(Roles, 2);
+        const role = row.get(Role, 2);
 
         const isValidPassword = verifyPassword(props.allocator, hash, request.password) catch return error.CannotCreate;
         const claims = JWTClaims{
@@ -241,7 +247,7 @@ pub const InvalidateToken = struct {
 pub const CreateAPIKey = struct {
     pub const Request = struct {
         user_id: []const u8,
-        role: Roles,
+        role: Role,
     };
     pub const Response = struct {
         api_key: []const u8,
@@ -305,7 +311,7 @@ pub const CreateAPIKey = struct {
 pub const GetUserByAPIKey = struct {
     pub const Response = struct {
         id: []const u8,
-        permissions: Roles,
+        permissions: Role,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
             allocator.free(self.id);
@@ -344,7 +350,7 @@ pub const GetUserByAPIKey = struct {
         const response = row.to(struct {
             user_id: []u8,
             secret_hash: []u8,
-            permissions: Roles,
+            permissions: Role,
         }, .{}) catch return error.CannotGet;
         std.debug.assert(response.secret_hash.len == 32);
         const hash = response.secret_hash[0..32].*;
@@ -685,14 +691,14 @@ test "Model | Auth | Create API Key with incorrect permissions" {
 pub const EditUserRole = struct {
     pub const Request = struct {
         target_user_id: []const u8,
-        role: Roles,
+        role: Role,
     };
 
     pub const Response = struct {
         id: []const u8,
         display_name: []const u8,
         username: []const u8,
-        role: Roles,
+        role: Role,
 
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
             allocator.free(self.id);
@@ -727,7 +733,7 @@ pub const EditUserRole = struct {
         const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
         const display_name = allocator.dupe(u8, row.get([]u8, 1)) catch return error.OutOfMemory;
         const username = allocator.dupe(u8, row.get([]u8, 2)) catch return error.OutOfMemory;
-        const role = row.get(Roles, 3);
+        const role = row.get(Role, 3);
 
         return Response{
             .id = id,
@@ -743,6 +749,38 @@ pub const EditUserRole = struct {
         \\WHERE id = $1
         \\RETURNING id, display_name, username, role
     ;
+};
+
+pub const HasAdmin = struct {
+    pub const Response = bool;
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotAcquireConnection,
+    } || DatabaseErrors;
+
+    pub fn call(database: *Pool) Errors!Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+
+        var row = conn.row(query_string, .{}) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        } orelse return error.CannotGet;
+
+        defer row.deinit() catch {};
+
+        const has_admin = row.get(bool, 0);
+
+        return has_admin;
+    }
+
+    const query_string = @embedFile("queries/has_admin.sql");
 };
 
 const Tests = @import("../../tests/setup.zig");

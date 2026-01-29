@@ -1,6 +1,6 @@
 pub const JWTClaims = struct {
     user_id: []const u8,
-    role: Roles,
+    role: Role,
     exp: i64,
 };
 
@@ -23,7 +23,7 @@ pub fn createSessionToken(allocator: Allocator) ![]const u8 {
     return allocator.dupe(u8, temp);
 }
 
-const Roles = @import("../models/auth/auth.zig").Roles;
+const Role = @import("../models/auth/auth.zig").Role;
 
 const jwt = @import("jwt");
 

@@ -27,7 +27,7 @@ pub const Connection = union(enum) {
     }
 };
 
-pub fn init(allocator: std.mem.Allocator, config: Config) !*Pool {
+pub fn init(allocator: Allocator, config: Config) !*Pool {
     const pool = try pg.Pool.init(allocator, .{ .size = 5, .connect = .{
         .port = config.database.port,
         .host = config.database.host,
@@ -37,7 +37,53 @@ pub fn init(allocator: std.mem.Allocator, config: Config) !*Pool {
         .password = config.database.password,
         .timeout = 10_000,
     } });
+
+    try hasAdmin(allocator, pool);
+
     return pool;
+}
+
+/// Checks if the database contains an admin account.
+pub fn hasAdmin(allocator: Allocator, pool: *Pool) !void {
+    const has_admin = try HasAdmin.call(pool);
+
+    if (has_admin) return;
+
+    var stdout_buf: [1024]u8 = undefined;
+    var stdin_buf: [1024]u8 = undefined;
+    var stdout = std.fs.File.stdout().writer(&stdout_buf);
+    var stdin = std.fs.File.stdin().reader(&stdin_buf);
+
+    _ = try stdout.interface.write("The database does not contain an account with an admin role. Create one:\nUsername: ");
+    try stdout.interface.flush();
+
+    const username = try allocator.dupe(u8, try stdin.interface.takeDelimiter('\n') orelse return error.UsernameIsNull);
+    defer allocator.free(username);
+
+    _ = try stdout.interface.write("Password: ");
+    try stdout.interface.flush();
+
+    // hide output from the user
+    try setTerminalEcho(false);
+    const password = try allocator.dupe(u8, try stdin.interface.takeDelimiter('\n') orelse return error.PasswordIsNull);
+    defer {
+        std.crypto.secureZero(u8, password);
+        allocator.free(password);
+    }
+    try setTerminalEcho(true);
+
+    const request = CreateUser.Request{
+        .display_name = username,
+        .username = username,
+        .password = password,
+        .role = .admin,
+    };
+
+    const response = try CreateUser.call(allocator, pool, request);
+    response.deinit(allocator);
+
+    _ = try stdout.interface.write("\nAccount created!\n");
+    try stdout.interface.flush();
 }
 
 pub const ErrorHandler = struct {
@@ -57,8 +103,13 @@ pub const ErrorHandler = struct {
     }
 };
 
+const HasAdmin = @import("models/auth/auth.zig").HasAdmin;
+const CreateUser = @import("models/auth/auth.zig").CreateUser;
+
+const setTerminalEcho = @import("util/setTerminalEcho.zig").setEcho;
 const Config = @import("config/config.zig");
 
 const pg = @import("pg");
 
+const Allocator = std.mem.Allocator;
 const std = @import("std");
