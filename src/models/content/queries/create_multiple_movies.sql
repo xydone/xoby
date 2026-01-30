@@ -1,8 +1,7 @@
 WITH
-  input_rows AS (
+  raw_input AS (
     SELECT
       id_idx as row_idx,
-      gen_random_uuid () AS new_id,
       val.title,
       NULLIF(val.rel_date, '')::date AS release_date,
       val.runtime::integer AS runtime,
@@ -29,6 +28,24 @@ WITH
         id_idx
       )
   ),
+  processed_input AS (
+    SELECT
+      r.*,
+      m.media_id AS existing_id,
+      gen_random_uuid () AS generated_id
+    FROM
+      raw_input r
+      LEFT JOIN content.external_mappings m ON r.provider = m.provider
+      AND r.ext_id = m.external_id
+  ),
+  final_data AS (
+    SELECT
+      *,
+      COALESCE(existing_id, generated_id) AS target_id,
+      (existing_id IS NULL) AS is_new
+    FROM
+      processed_input
+  ),
   inserted_media AS (
     INSERT INTO
       content.media_items (
@@ -40,42 +57,46 @@ WITH
         media_type
       )
     SELECT
-      new_id,
+      target_id,
       $2::uuid,
       title,
       description,
       release_date,
-      'movie'::content.media_type
+      'movie'
     FROM
-      input_rows
+      final_data
+    WHERE
+      is_new = true
   ),
   inserted_movies AS (
     INSERT INTO
       content.movies (media_id, runtime_minutes)
     SELECT
-      new_id,
+      target_id,
       runtime
     FROM
-      input_rows
+      final_data
+    WHERE
+      is_new = true
   ),
-  inserted_mappings AS (
+  upserted_mappings AS (
     INSERT INTO
       content.external_mappings (media_id, provider, external_id, last_synced_at)
     SELECT
-      new_id,
+      target_id,
       provider,
       ext_id,
       now()
     FROM
-      input_rows ON CONFLICT (provider, external_id)
+      final_data ON CONFLICT (provider, external_id)
     DO
     UPDATE
     SET
       last_synced_at = EXCLUDED.last_synced_at
   )
 SELECT
-  new_id
+  target_id as id
 FROM
-  input_rows
+  final_data
 ORDER BY
   row_idx;
