@@ -84,6 +84,7 @@ const Fetch = struct {
                 try saveToDatabase(arena_alloc, request, manga, staff);
 
                 manga.clearRetainingCapacity();
+                staff.clearRetainingCapacity();
                 _ = arena.reset(.retain_capacity);
             }
             reader.interface.toss(1);
@@ -94,7 +95,7 @@ const Fetch = struct {
 
             const response: APIResponse = try document.asLeaky(APIResponse, arena_alloc, .{});
 
-            if (response.state == .merged) continue;
+            if (response.state != .active) continue;
 
             for (request.state.config.allowed_sources) |source| {
                 switch (source) {
@@ -125,16 +126,33 @@ const Fetch = struct {
         request: Request,
         response: APIResponse,
         manga: *std.MultiArrayList(Manga),
-        _: *std.MultiArrayList(Staff),
+        staff: *std.MultiArrayList(Staff),
     ) !void {
+        const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?});
         try manga.append(request.state.allocator, .{
-            .id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?}),
+            .id = anilist_id,
             .provider = "anilist",
             .release_date = null,
             .title = try arena_alloc.dupe(u8, response.title),
             .description = if (response.description) |desc| try arena_alloc.dupe(u8, desc) else null,
             .total_chapters = if (response.total_chapters) |str| try std.fmt.parseInt(i32, str, 10) else null,
         });
+        const raw_response = response.source.anilist.?.response orelse {
+            log.err("raw response not present! mangabaka id: {} | title: {s} | anilist id {s}. Skipping...", .{ response.id, response.title, anilist_id });
+            return;
+        };
+
+        for (raw_response.staff.edges) |edge| {
+            try staff.append(request.state.allocator, .{
+                .name = try arena_alloc.dupe(u8, edge.node.name.full),
+                .external_id = try std.fmt.allocPrint(arena_alloc, "{}", .{edge.id}),
+                .bio = null,
+                .provider = "anilist",
+                .media_id = anilist_id,
+                .role_name = try arena_alloc.dupe(u8, edge.role),
+                .character_name = null,
+            });
+        }
     }
 
     fn saveToDatabase(
@@ -155,8 +173,15 @@ const Fetch = struct {
             try external_media_id_to_db_id.put(external_id, db_id);
         }
 
-        _ = staff;
-        // try createPeople(arena_alloc, conn, staff);
+        const people_response = try createPeople(arena_alloc, conn, staff);
+
+        try createMediaStaff(
+            arena_alloc,
+            conn,
+            staff,
+            people_response,
+            external_media_id_to_db_id,
+        );
 
         conn.commit() catch {
             log.err("Transaction did not go through!", .{});
@@ -177,22 +202,57 @@ const Fetch = struct {
         return CreateMultipleManga.call(arena_alloc, request.state.pool, req);
     }
 
-    fn createPeople(arena_alloc: Allocator, conn: *Conn, staff: std.MultiArrayList(Staff)) !void {
+    fn createPeople(arena_alloc: Allocator, conn: *Conn, staff: std.MultiArrayList(Staff)) ![]CreateMultiplePeople.Response {
         const req: CreateMultiplePeople.Request = .{
             .full_names = staff.items(.name),
             .bios = staff.items(.bio),
             .provider = staff.items(.provider),
             .external_ids = staff.items(.external_id),
         };
-        _ = try CreateMultiplePeople.call(arena_alloc, .{ .conn = conn }, req);
+        return CreateMultiplePeople.call(arena_alloc, .{ .conn = conn }, req);
     }
 
-    fn createMediaStaff(conn: *Conn, staff: std.MultiArrayList(Staff)) !void {
+    fn createMediaStaff(
+        arena_alloc: Allocator,
+        conn: *Conn,
+        staff: std.MultiArrayList(Staff),
+        people_response: []CreateMultiplePeople.Response,
+        media_id_map: std.StringHashMap([]u8),
+    ) !void {
+        const person_ids = blk: {
+            const ids = try arena_alloc.alloc([]const u8, staff.len);
+
+            var map = std.StringHashMap([]const u8).init(arena_alloc);
+
+            for (people_response) |res| {
+                try map.put(res.external_id, res.person_id);
+            }
+
+            for (staff.items(.external_id), 0..) |external_id, i| {
+                ids[i] = map.get(external_id) orelse {
+                    log.err("external id not in map!", .{});
+                    return error.ExternalIDNotInMap;
+                };
+            }
+            break :blk ids;
+        };
+
+        const staff_media_ids = blk: {
+            const ids = try arena_alloc.alloc([]const u8, staff.len);
+
+            for (staff.items(.media_id), 0..) |external_id, i| {
+                ids[i] = media_id_map.get(external_id) orelse {
+                    log.debug("Staff: {s} doesnt have an id inside the map!", .{external_id});
+                    return error.MovieNotInsideMap;
+                };
+            }
+            break :blk ids;
+        };
         const req: CreateMultipleMediaStaff.Request = .{
-            .person_ids = staff.items(.person_ids),
-            .media_ids = staff.items(.media_ids),
-            .role_names = staff.items(.role_names),
-            .character_names = staff.items(.character_names),
+            .person_ids = person_ids,
+            .media_ids = staff_media_ids,
+            .role_names = staff.items(.role_name),
+            .character_names = staff.items(.character_name),
         };
         _ = try CreateMultipleMediaStaff.call(.{ .conn = conn }, req);
     }
@@ -202,7 +262,6 @@ const Fetch = struct {
         external_id: []const u8,
         bio: ?[]const u8,
         provider: []const u8,
-        person_id: []const u8,
         media_id: []const u8,
         role_name: []const u8,
         character_name: ?[]const u8,
@@ -257,12 +316,16 @@ pub const APIResponse = struct {
         };
 
         pub const StaffEdge = struct {
+            id: i32,
             node: StaffNode,
             role: []const u8,
         };
 
         pub const StaffNode = struct {
-            id: u32,
+            name: Names,
+            pub const Names = struct {
+                full: []const u8,
+            };
         };
     };
 };

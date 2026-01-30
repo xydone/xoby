@@ -4,4 +4,6 @@ SELECT * FROM UNNEST(
     $2::uuid[],
     $3::text[],
     $4::text[]
-);
+)
+ON CONFLICT (media_id, person_id, role_name, character_name) 
+DO NOTHING;
