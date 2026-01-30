@@ -110,9 +110,8 @@ pub fn fetch(
                 MangaBaka.run(
                     allocator,
                     database,
-                    config.collectors.mangabaka.database_path.?,
+                    config.collectors.mangabaka,
                     user_id,
-                    config.collectors.mangabaka.batch_size,
                     manager,
                 ) catch |err| {
                     log.err("MangaBaka failed! {}", .{err});

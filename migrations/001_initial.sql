@@ -123,11 +123,14 @@ CREATE TABLE content.people (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
 full_name TEXT NOT NULL,
 bio TEXT,
-provider TEXT NOT NULL,
-external_id TEXT NOT NULL,
-created_at TIMESTAMPTZ DEFAULT now (),
-UNIQUE (provider, external_id)
+provider TEXT,
+external_id TEXT,
+created_at TIMESTAMPTZ DEFAULT now ()
 ) ;
+
+CREATE UNIQUE INDEX unique_provider_external_id_not_null
+ON content.people (provider, external_id)
+WHERE external_id IS NOT NULL;
 
 CREATE TABLE content.media_staff (
 id uuid PRIMARY KEY DEFAULT gen_random_uuid (),

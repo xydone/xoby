@@ -52,8 +52,20 @@ pub const Collectors = struct {
         enable: bool,
         database_path: ?[]const u8,
         batch_size: u32,
+        allowed_sources: []Source,
+
+        pub const Source = enum {
+            anilist,
+            anime_planet,
+            kitsu,
+            manga_updates,
+            my_anime_list,
+            shikimori,
+        };
+
         pub fn deinit(self: @This(), allocator: Allocator) void {
             if (self.database_path) |p| allocator.free(p);
+            allocator.free(self.allowed_sources);
         }
     };
 
@@ -168,6 +180,7 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                         .enable = false,
                         .database_path = null,
                         .batch_size = 0,
+                        .allowed_sources = &.{},
                     };
                 }
 
@@ -178,6 +191,7 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                         .enable = true,
                         .database_path = path,
                         .batch_size = config.batch_size,
+                        .allowed_sources = try allocator.dupe(Collectors.MangaBaka.Source, config.allowed_sources),
                     };
                 } else {
                     // mangabaka was enabled, but database_path was not present.
@@ -186,6 +200,7 @@ pub fn init(allocator: Allocator) InitErrors!Config {
                         .enable = false,
                         .database_path = null,
                         .batch_size = 0,
+                        .allowed_sources = &.{},
                     };
                 }
             },

@@ -48,13 +48,26 @@
             // Whether or not to enable the collector.
             // Further configurations will not be refered to by Xoby if this is false.
             .enable = false,
-            // Where should the server look for the database dump
+            // Where should the server look for the database dump.
             // https://mangabaka.org/database
-            // IMPORTANT: Xoby will only look for .jsonl files
+            // IMPORTANT: The full database dump must be downloaded.
+            // IMPORTANT: Xoby will only look for .jsonl files.
             .database_path = null,
             // The collector writes to the database in batches. This value specifies how big the batches should be.
             // Bigger batches mean less frequent writes to disk, but more memory usage.
             .batch_size = 5_000,
+            // As MangaBaka is a collection of multiple different databases, there are many sources of truth.
+            // MangaBaka addresses that by marking the earliest encounter with a "merged" tag, however that leads to information loss (ex. no staff ids).
+            // However, the full database dump contains the full raw responses from the source.
+            // For that reason, MangaBaka's dump is used to only insert content from a given source.
+            .allowed_sources = .{
+                .anilist,
+                // .anime_planet, // WARNING: not implemented
+                // .kitsu, // WARNING: not implemented
+                // .manga_updates, // WARNING: not implemented
+                // .my_anime_list, // WARNING: not implemented
+                // .shikimori, // WARNING: not implemented
+            },
         },
     },
 }

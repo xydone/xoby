@@ -1,3 +1,4 @@
+// https://ziggit.dev/t/get-password-input/12258/6
 fn setEchoWindows(enable: bool) !void {
     const windows = std.os.windows;
     const kernel32 = windows.kernel32;

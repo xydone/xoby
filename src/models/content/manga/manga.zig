@@ -1,10 +1,12 @@
-pub const CreateMany = struct {
+pub const CreateMultiple = struct {
     pub const Request = struct {
         title: [][]const u8,
         release_date: []?[]const u8,
         description: []?[]const u8,
         total_chapters: []?i32,
         user_id: []const u8,
+        providers: [][]const u8,
+        external_ids: [][]const u8,
     };
 
     pub const Response = struct {
@@ -33,6 +35,8 @@ pub const CreateMany = struct {
             request.description,
             request.total_chapters,
             request.user_id,
+            request.providers,
+            request.external_ids,
         }) catch |err| {
             const error_data = error_handler.handle(err);
             if (error_data) |data| {
