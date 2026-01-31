@@ -67,7 +67,6 @@ CREATE TABLE
     title TEXT NOT NULL,
     description TEXT,
     release_date DATE,
-    cover_image_url TEXT,
     media_type content.media_type NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
   );

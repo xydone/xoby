@@ -19,7 +19,6 @@ pub const GetInformation = struct {
         title: []u8,
         media_type: MediaType,
         release_date: ?i64,
-        cover_image_url: ?[]u8,
         data: union(MediaType) {
             movie: MovieData,
             book: BookData,
@@ -48,7 +47,6 @@ pub const GetInformation = struct {
         pub fn deinit(self: Response, allocator: Allocator) void {
             allocator.free(self.id);
             allocator.free(self.title);
-            if (self.cover_image_url) |url| allocator.free(url);
             switch (self.data) {
                 inline else => |data| {
                     data.deinit(allocator);
@@ -90,7 +88,6 @@ pub const GetInformation = struct {
             title: []u8,
             media_type: MediaType,
             release_date: ?i64,
-            cover_image_url: ?[]u8,
             // movie specific fields
             runtime_minutes: ?i64,
             // book specific fields
@@ -107,7 +104,6 @@ pub const GetInformation = struct {
             .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
             .media_type = response.media_type,
             .release_date = response.release_date,
-            .cover_image_url = if (response.cover_image_url) |url| allocator.dupe(u8, url) catch return error.OutOfMemory else response.cover_image_url,
             .data = switch (response.media_type) {
                 .movie => blk: {
                     break :blk .{
@@ -133,7 +129,6 @@ pub const GetInformation = struct {
         \\ m.title,
         \\ m.media_type,
         \\ m.release_date,
-        \\ m.cover_image_url,
         \\ mov.runtime_minutes,
         \\ bk.total_pages
         \\ FROM content.media_items m
