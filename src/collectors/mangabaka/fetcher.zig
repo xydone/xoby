@@ -71,6 +71,9 @@ const Fetch = struct {
         var staff: std.MultiArrayList(Staff) = .empty;
         defer staff.deinit(request.state.allocator);
 
+        var genres: std.MultiArrayList(Genre) = .empty;
+        defer genres.deinit(request.state.allocator);
+
         var parser = Parser.init;
         defer parser.deinit(request.state.allocator);
 
@@ -81,7 +84,13 @@ const Fetch = struct {
             if (i == request.state.config.batch_size) {
                 i = 0;
 
-                try saveToDatabase(arena_alloc, request, manga, staff);
+                try saveToDatabase(
+                    arena_alloc,
+                    request,
+                    manga,
+                    staff,
+                    genres,
+                );
 
                 manga.clearRetainingCapacity();
                 staff.clearRetainingCapacity();
@@ -109,6 +118,7 @@ const Fetch = struct {
                             response,
                             &manga,
                             &staff,
+                            &genres,
                         );
                     },
                     else => {},
@@ -117,7 +127,13 @@ const Fetch = struct {
         } else |_| {}
         // check if there have been any leftovers
         if (manga.len != 0) {
-            try saveToDatabase(arena_alloc, request, manga, staff);
+            try saveToDatabase(
+                arena_alloc,
+                request,
+                manga,
+                staff,
+                genres,
+            );
         }
     }
 
@@ -127,6 +143,7 @@ const Fetch = struct {
         response: APIResponse,
         manga: *std.MultiArrayList(Manga),
         staff: *std.MultiArrayList(Staff),
+        genres: *std.MultiArrayList(Genre),
     ) !void {
         const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?});
         try manga.append(request.state.allocator, .{
@@ -153,6 +170,17 @@ const Fetch = struct {
                 .character_name = null,
             });
         }
+
+        genres_blk: {
+            const list = response.genres orelse break :genres_blk;
+
+            for (list) |genre| {
+                try genres.append(request.state.allocator, .{
+                    .name = try arena_alloc.dupe(u8, genre),
+                    .external_id = anilist_id,
+                });
+            }
+        }
     }
 
     fn saveToDatabase(
@@ -160,13 +188,19 @@ const Fetch = struct {
         request: Request,
         manga: std.MultiArrayList(Manga),
         staff: std.MultiArrayList(Staff),
+        genres: std.MultiArrayList(Genre),
     ) !void {
         const conn = request.state.pool.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
 
         try conn.begin();
 
-        const manga_response = try createManga(arena_alloc, request, manga);
+        const manga_response = try createManga(
+            arena_alloc,
+            conn,
+            request,
+            manga,
+        );
 
         var external_media_id_to_db_id = std.StringHashMap([]u8).init(arena_alloc);
         for (manga.items(.id), manga_response.ids) |external_id, db_id| {
@@ -183,13 +217,25 @@ const Fetch = struct {
             external_media_id_to_db_id,
         );
 
+        try createGenres(
+            arena_alloc,
+            conn,
+            genres,
+            external_media_id_to_db_id,
+        );
+
         conn.commit() catch {
             log.err("Transaction did not go through!", .{});
             try conn.rollback();
         };
     }
 
-    fn createManga(arena_alloc: Allocator, request: Request, manga: std.MultiArrayList(Manga)) !CreateMultipleManga.Response {
+    fn createManga(
+        arena_alloc: Allocator,
+        conn: *Conn,
+        request: Request,
+        manga: std.MultiArrayList(Manga),
+    ) !CreateMultipleManga.Response {
         const req: CreateMultipleManga.Request = .{
             .external_ids = manga.items(.id),
             .providers = manga.items(.provider),
@@ -199,7 +245,31 @@ const Fetch = struct {
             .total_chapters = manga.items(.total_chapters),
             .user_id = request.state.user_id,
         };
-        return CreateMultipleManga.call(arena_alloc, request.state.pool, req);
+        return CreateMultipleManga.call(arena_alloc, .{ .conn = conn }, req);
+    }
+
+    fn createGenres(
+        arena_alloc: Allocator,
+        conn: *Conn,
+        genres: std.MultiArrayList(Genre),
+        media_id_map: std.StringHashMap([]u8),
+    ) !void {
+        const genre_media_ids = blk: {
+            const ids = try arena_alloc.alloc([]const u8, genres.len);
+
+            for (genres.items(.external_id), 0..) |external_id, i| {
+                ids[i] = media_id_map.get(external_id) orelse {
+                    log.debug("Genre: Movie {s} doesnt have an id inside the map!", .{external_id});
+                    return error.MovieNotInsideMap;
+                };
+            }
+            break :blk ids;
+        };
+        const req: CreateMultipleGenres.Request = .{
+            .names = genres.items(.name),
+            .media_ids = genre_media_ids,
+        };
+        try CreateMultipleGenres.call(.{ .conn = conn }, req);
     }
 
     fn createPeople(arena_alloc: Allocator, conn: *Conn, staff: std.MultiArrayList(Staff)) ![]CreateMultiplePeople.Response {
@@ -275,6 +345,14 @@ const Fetch = struct {
         total_chapters: ?i32,
         provider: []const u8,
     };
+
+    pub const Genre = struct {
+        name: []const u8,
+        external_id: []const u8,
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.name);
+        }
+    };
 };
 
 pub const State = struct {
@@ -292,6 +370,7 @@ pub const APIResponse = struct {
     id: u32,
     title: []const u8,
     description: ?[]const u8,
+    genres: ?[][]const u8,
     total_chapters: ?[]const u8,
     state: APIResponse.State,
     source: Source,
@@ -330,6 +409,7 @@ pub const APIResponse = struct {
     };
 };
 
+const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
 const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
 const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
 const CreateMultipleManga = @import("../../models/content/manga/manga.zig").CreateMultiple;

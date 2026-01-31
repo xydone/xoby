@@ -537,7 +537,7 @@ const Model = struct {
         media_id_map: std.StringHashMap([]u8),
         request: Req,
     ) !void {
-        const genre_image_ids = blk: {
+        const genre_media_id = blk: {
             const ids = try allocator.alloc([]const u8, request.genres.len);
 
             for (request.genres.items(.media_id), 0..) |external_id, i| {
@@ -550,7 +550,7 @@ const Model = struct {
         };
 
         const genres_request: CreateMultipleGenres.Request = .{
-            .media_ids = genre_image_ids,
+            .media_ids = genre_media_id,
             .names = request.genres.items(.name),
         };
 

@@ -24,9 +24,9 @@ pub const CreateMultiple = struct {
         CannotParseID,
     } || DatabaseErrors;
 
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors!Response {
         assertSameLength(request, .{ "title", "release_date", "description", "total_chapters" });
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        var conn = try connection.acquire();
         defer conn.release();
         const error_handler = ErrorHandler{ .conn = conn };
         var query = conn.query(query_string, .{
@@ -64,6 +64,7 @@ pub const CreateMultiple = struct {
 };
 
 const Pool = @import("../../../database.zig").Pool;
+const Connection = @import("../../../database.zig").Connection;
 const DatabaseErrors = @import("../../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../../database.zig").ErrorHandler;
 
