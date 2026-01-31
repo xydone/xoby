@@ -13,7 +13,7 @@ pub fn run(
         .allocator = allocator,
         .pool = pool,
         .config = config,
-        .user_id = user_id,
+        .user_id = try allocator.dupe(u8, user_id),
         .manager = manager,
         .thread = undefined,
     };
@@ -36,7 +36,10 @@ const Fetch = struct {
         state: *State,
     };
     pub fn callSupressError(request: Request) void {
-        defer request.state.allocator.destroy(request.state);
+        defer {
+            request.state.deinit(request.state.allocator);
+            request.state.allocator.destroy(request.state);
+        }
 
         call(request) catch |err| {
             switch (err) {
@@ -94,6 +97,7 @@ const Fetch = struct {
 
                 manga.clearRetainingCapacity();
                 staff.clearRetainingCapacity();
+                genres.clearRetainingCapacity();
                 _ = arena.reset(.retain_capacity);
             }
             reader.interface.toss(1);
@@ -197,7 +201,9 @@ const Fetch = struct {
 
         const manga_response = try createManga(
             arena_alloc,
-            conn,
+            .{
+                .conn = conn,
+            },
             request,
             manga,
         );
@@ -207,11 +213,19 @@ const Fetch = struct {
             try external_media_id_to_db_id.put(external_id, db_id);
         }
 
-        const people_response = try createPeople(arena_alloc, conn, staff);
+        const people_response = try createPeople(
+            arena_alloc,
+            .{
+                .conn = conn,
+            },
+            staff,
+        );
 
         try createMediaStaff(
             arena_alloc,
-            conn,
+            .{
+                .conn = conn,
+            },
             staff,
             people_response,
             external_media_id_to_db_id,
@@ -219,7 +233,9 @@ const Fetch = struct {
 
         try createGenres(
             arena_alloc,
-            conn,
+            .{
+                .conn = conn,
+            },
             genres,
             external_media_id_to_db_id,
         );
@@ -232,7 +248,7 @@ const Fetch = struct {
 
     fn createManga(
         arena_alloc: Allocator,
-        conn: *Conn,
+        connection: Connection,
         request: Request,
         manga: std.MultiArrayList(Manga),
     ) !CreateMultipleManga.Response {
@@ -245,12 +261,12 @@ const Fetch = struct {
             .total_chapters = manga.items(.total_chapters),
             .user_id = request.state.user_id,
         };
-        return CreateMultipleManga.call(arena_alloc, .{ .conn = conn }, req);
+        return CreateMultipleManga.call(arena_alloc, connection, req);
     }
 
     fn createGenres(
         arena_alloc: Allocator,
-        conn: *Conn,
+        connection: Connection,
         genres: std.MultiArrayList(Genre),
         media_id_map: std.StringHashMap([]u8),
     ) !void {
@@ -269,22 +285,22 @@ const Fetch = struct {
             .names = genres.items(.name),
             .media_ids = genre_media_ids,
         };
-        try CreateMultipleGenres.call(.{ .conn = conn }, req);
+        try CreateMultipleGenres.call(connection, req);
     }
 
-    fn createPeople(arena_alloc: Allocator, conn: *Conn, staff: std.MultiArrayList(Staff)) ![]CreateMultiplePeople.Response {
+    fn createPeople(arena_alloc: Allocator, connection: Connection, staff: std.MultiArrayList(Staff)) ![]CreateMultiplePeople.Response {
         const req: CreateMultiplePeople.Request = .{
             .full_names = staff.items(.name),
             .bios = staff.items(.bio),
             .provider = staff.items(.provider),
             .external_ids = staff.items(.external_id),
         };
-        return CreateMultiplePeople.call(arena_alloc, .{ .conn = conn }, req);
+        return CreateMultiplePeople.call(arena_alloc, connection, req);
     }
 
     fn createMediaStaff(
         arena_alloc: Allocator,
-        conn: *Conn,
+        connection: Connection,
         staff: std.MultiArrayList(Staff),
         people_response: []CreateMultiplePeople.Response,
         media_id_map: std.StringHashMap([]u8),
@@ -324,7 +340,7 @@ const Fetch = struct {
             .role_names = staff.items(.role_name),
             .character_names = staff.items(.character_name),
         };
-        _ = try CreateMultipleMediaStaff.call(.{ .conn = conn }, req);
+        _ = try CreateMultipleMediaStaff.call(connection, req);
     }
 
     const Staff = struct {
@@ -364,6 +380,10 @@ pub const State = struct {
     is_cancelled: std.atomic.Value(bool) = .init(false),
     thread: std.Thread,
     manager: *Manager,
+
+    pub fn deinit(self: @This(), allocator: Allocator) void {
+        allocator.free(self.user_id);
+    }
 };
 
 pub const APIResponse = struct {
@@ -418,6 +438,7 @@ const Database = @import("../../database.zig");
 
 const Config = @import("../../config/config.zig").Collectors.MangaBaka;
 
+const Connection = @import("../../database.zig").Connection;
 const Pool = @import("../../database.zig").Pool;
 const Manager = @import("../fetchers.zig").Manager;
 
