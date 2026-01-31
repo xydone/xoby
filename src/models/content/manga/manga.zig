@@ -27,7 +27,7 @@ pub const CreateMultiple = struct {
     pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors!Response {
         assertSameLength(request, .{ "title", "release_date", "description", "total_chapters" });
         var conn = try connection.acquire();
-        defer conn.release();
+        defer connection.release(conn);
         const error_handler = ErrorHandler{ .conn = conn };
         var query = conn.query(query_string, .{
             request.title,

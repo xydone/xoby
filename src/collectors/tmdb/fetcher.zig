@@ -325,8 +325,6 @@ const Request = struct {
             for (@field(response.images, field.name)) |img| {
                 const image: MovieIDResponse.Images.Image = img;
                 try request.state.image_list.append(request.state.allocator, .{
-                    .width = image.width,
-                    .height = image.height,
                     .path = try request.state.allocator.dupe(u8, image.file_path),
                     .image_type = switch (@as(MovieIDResponse.Images.ImageType, @enumFromInt(field.value))) {
                         .backdrops => .backdrop,
@@ -519,8 +517,6 @@ const Model = struct {
         const images_request: CreateMultipleImages.Request = .{
             .media_ids = image_media_ids,
             .image_type = request.images.items(.image_type),
-            .width = request.images.items(.width),
-            .height = request.images.items(.height),
             .provider_id = request.images.items(.provider),
             .path = request.images.items(.path),
             .is_primary = request.images.items(.is_primary),
@@ -612,9 +608,7 @@ const MovieIDResponse = struct {
         const ImageType = enum { backdrops, logos, posters };
 
         pub const Image = struct {
-            height: i32,
             file_path: []const u8,
-            width: i32,
         };
     };
 
@@ -659,8 +653,6 @@ const DatabaseRepresentation = struct {
     };
 
     pub const Image = struct {
-        width: i32,
-        height: i32,
         path: []const u8,
         image_type: ImageType,
         is_primary: bool,

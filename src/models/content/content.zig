@@ -9,6 +9,7 @@ pub const ImageType = enum {
     backdrop,
     logo,
     poster,
+    cover,
 };
 
 pub const Media = @import("media.zig");
@@ -123,8 +124,6 @@ pub const CreateMultipleImages = struct {
     pub const Request = struct {
         media_ids: [][]const u8,
         image_type: []ImageType,
-        width: []i32,
-        height: []i32,
         provider_id: [][]const u8,
         path: [][]const u8,
         is_primary: []bool,
@@ -147,8 +146,6 @@ pub const CreateMultipleImages = struct {
         _ = conn.exec(query_string, .{
             request.media_ids,
             request.image_type,
-            request.width,
-            request.height,
             request.provider_id,
             request.path,
             request.is_primary,

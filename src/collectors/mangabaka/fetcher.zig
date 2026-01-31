@@ -31,7 +31,7 @@ pub fn run(
     );
 }
 
-const Fetch = struct {
+pub const Fetch = struct {
     pub const Request = struct {
         state: *State,
     };
@@ -68,14 +68,17 @@ const Fetch = struct {
         const arena_alloc = arena.allocator();
         defer arena.deinit();
 
-        var manga: std.MultiArrayList(Manga) = .empty;
+        var manga: std.MultiArrayList(DatabaseRepresentation.Manga) = .empty;
         defer manga.deinit(request.state.allocator);
 
-        var staff: std.MultiArrayList(Staff) = .empty;
+        var staff: std.MultiArrayList(DatabaseRepresentation.Staff) = .empty;
         defer staff.deinit(request.state.allocator);
 
-        var genres: std.MultiArrayList(Genre) = .empty;
+        var genres: std.MultiArrayList(DatabaseRepresentation.Genre) = .empty;
         defer genres.deinit(request.state.allocator);
+
+        var images: std.MultiArrayList(DatabaseRepresentation.Image) = .empty;
+        defer images.deinit(request.state.allocator);
 
         var parser = Parser.init;
         defer parser.deinit(request.state.allocator);
@@ -93,11 +96,13 @@ const Fetch = struct {
                     manga,
                     staff,
                     genres,
+                    images,
                 );
 
                 manga.clearRetainingCapacity();
                 staff.clearRetainingCapacity();
                 genres.clearRetainingCapacity();
+                images.clearRetainingCapacity();
                 _ = arena.reset(.retain_capacity);
             }
             reader.interface.toss(1);
@@ -113,16 +118,17 @@ const Fetch = struct {
             for (request.state.config.allowed_sources) |source| {
                 switch (source) {
                     .anilist => {
-                        defer i += 1;
                         const anilist = response.source.anilist orelse continue;
                         _ = anilist.id orelse continue;
-                        try insertAniList(
+                        i += 1;
+                        try AniListHandler.insert(
                             arena_alloc,
                             request,
                             response,
                             &manga,
                             &staff,
                             &genres,
+                            &images,
                         );
                     },
                     else => {},
@@ -137,62 +143,18 @@ const Fetch = struct {
                 manga,
                 staff,
                 genres,
+                images,
             );
-        }
-    }
-
-    fn insertAniList(
-        arena_alloc: Allocator,
-        request: Request,
-        response: APIResponse,
-        manga: *std.MultiArrayList(Manga),
-        staff: *std.MultiArrayList(Staff),
-        genres: *std.MultiArrayList(Genre),
-    ) !void {
-        const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?});
-        try manga.append(request.state.allocator, .{
-            .id = anilist_id,
-            .provider = "anilist",
-            .release_date = null,
-            .title = try arena_alloc.dupe(u8, response.title),
-            .description = if (response.description) |desc| try arena_alloc.dupe(u8, desc) else null,
-            .total_chapters = if (response.total_chapters) |str| try std.fmt.parseInt(i32, str, 10) else null,
-        });
-        const raw_response = response.source.anilist.?.response orelse {
-            log.err("raw response not present! mangabaka id: {} | title: {s} | anilist id {s}. Skipping...", .{ response.id, response.title, anilist_id });
-            return;
-        };
-
-        for (raw_response.staff.edges) |edge| {
-            try staff.append(request.state.allocator, .{
-                .name = try arena_alloc.dupe(u8, edge.node.name.full),
-                .external_id = try std.fmt.allocPrint(arena_alloc, "{}", .{edge.id}),
-                .bio = null,
-                .provider = "anilist",
-                .media_id = anilist_id,
-                .role_name = try arena_alloc.dupe(u8, edge.role),
-                .character_name = null,
-            });
-        }
-
-        genres_blk: {
-            const list = response.genres orelse break :genres_blk;
-
-            for (list) |genre| {
-                try genres.append(request.state.allocator, .{
-                    .name = try arena_alloc.dupe(u8, genre),
-                    .external_id = anilist_id,
-                });
-            }
         }
     }
 
     fn saveToDatabase(
         arena_alloc: Allocator,
         request: Request,
-        manga: std.MultiArrayList(Manga),
-        staff: std.MultiArrayList(Staff),
-        genres: std.MultiArrayList(Genre),
+        manga: std.MultiArrayList(DatabaseRepresentation.Manga),
+        staff: std.MultiArrayList(DatabaseRepresentation.Staff),
+        genres: std.MultiArrayList(DatabaseRepresentation.Genre),
+        images: std.MultiArrayList(DatabaseRepresentation.Image),
     ) !void {
         const conn = request.state.pool.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
@@ -240,6 +202,15 @@ const Fetch = struct {
             external_media_id_to_db_id,
         );
 
+        try createImages(
+            arena_alloc,
+            .{
+                .conn = conn,
+            },
+            images,
+            external_media_id_to_db_id,
+        );
+
         conn.commit() catch {
             log.err("Transaction did not go through!", .{});
             try conn.rollback();
@@ -250,7 +221,7 @@ const Fetch = struct {
         arena_alloc: Allocator,
         connection: Connection,
         request: Request,
-        manga: std.MultiArrayList(Manga),
+        manga: std.MultiArrayList(DatabaseRepresentation.Manga),
     ) !CreateMultipleManga.Response {
         const req: CreateMultipleManga.Request = .{
             .external_ids = manga.items(.id),
@@ -267,7 +238,7 @@ const Fetch = struct {
     fn createGenres(
         arena_alloc: Allocator,
         connection: Connection,
-        genres: std.MultiArrayList(Genre),
+        genres: std.MultiArrayList(DatabaseRepresentation.Genre),
         media_id_map: std.StringHashMap([]u8),
     ) !void {
         const genre_media_ids = blk: {
@@ -288,7 +259,11 @@ const Fetch = struct {
         try CreateMultipleGenres.call(connection, req);
     }
 
-    fn createPeople(arena_alloc: Allocator, connection: Connection, staff: std.MultiArrayList(Staff)) ![]CreateMultiplePeople.Response {
+    fn createPeople(
+        arena_alloc: Allocator,
+        connection: Connection,
+        staff: std.MultiArrayList(DatabaseRepresentation.Staff),
+    ) ![]CreateMultiplePeople.Response {
         const req: CreateMultiplePeople.Request = .{
             .full_names = staff.items(.name),
             .bios = staff.items(.bio),
@@ -301,7 +276,7 @@ const Fetch = struct {
     fn createMediaStaff(
         arena_alloc: Allocator,
         connection: Connection,
-        staff: std.MultiArrayList(Staff),
+        staff: std.MultiArrayList(DatabaseRepresentation.Staff),
         people_response: []CreateMultiplePeople.Response,
         media_id_map: std.StringHashMap([]u8),
     ) !void {
@@ -343,7 +318,35 @@ const Fetch = struct {
         _ = try CreateMultipleMediaStaff.call(connection, req);
     }
 
-    const Staff = struct {
+    fn createImages(
+        arena_alloc: Allocator,
+        connection: Connection,
+        images: std.MultiArrayList(DatabaseRepresentation.Image),
+        media_id_map: std.StringHashMap([]u8),
+    ) !void {
+        const media_ids = blk: {
+            const ids = try arena_alloc.alloc([]const u8, images.len);
+
+            for (images.items(.external_media_id), 0..) |external_id, i| {
+                ids[i] = media_id_map.get(external_id) orelse {
+                    return error.MovieNotInsideMap;
+                };
+            }
+            break :blk ids;
+        };
+        const req: CreateMultipleImages.Request = .{
+            .media_ids = media_ids,
+            .image_type = images.items(.image_type),
+            .provider_id = images.items(.provider),
+            .path = images.items(.path),
+            .is_primary = images.items(.is_primary),
+        };
+        try CreateMultipleImages.call(connection, req);
+    }
+};
+
+pub const DatabaseRepresentation = struct {
+    pub const Staff = struct {
         name: []const u8,
         external_id: []const u8,
         bio: ?[]const u8,
@@ -353,7 +356,7 @@ const Fetch = struct {
         character_name: ?[]const u8,
     };
 
-    const Manga = struct {
+    pub const Manga = struct {
         id: []const u8,
         title: []const u8,
         release_date: ?[]const u8,
@@ -368,6 +371,14 @@ const Fetch = struct {
         pub fn deinit(self: @This(), allocator: Allocator) void {
             allocator.free(self.name);
         }
+    };
+
+    pub const Image = struct {
+        path: []const u8,
+        provider: []const u8,
+        is_primary: bool,
+        image_type: ImageType,
+        external_media_id: []const u8,
     };
 };
 
@@ -408,10 +419,15 @@ pub const APIResponse = struct {
         pub const Response = struct {
             id: u32,
             staff: Staff,
+            coverImage: ?CoverImage,
         };
 
         pub const Staff = struct {
             edges: []StaffEdge,
+        };
+
+        pub const CoverImage = struct {
+            large: []const u8,
         };
 
         pub const StaffEdge = struct {
@@ -429,12 +445,17 @@ pub const APIResponse = struct {
     };
 };
 
+const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
 const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
 const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
 const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
 const CreateMultipleManga = @import("../../models/content/manga/manga.zig").CreateMultiple;
 const Conn = @import("../../database.zig").Conn;
 const Database = @import("../../database.zig");
+
+const ImageType = @import("../../models/content/content.zig").ImageType;
+
+const AniListHandler = @import("anilist.zig");
 
 const Config = @import("../../config/config.zig").Collectors.MangaBaka;
 

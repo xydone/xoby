@@ -159,7 +159,7 @@ CREATE TABLE
   );
 
 CREATE TYPE
-  content.image_type AS ENUM('backdrop', 'logo', 'poster');
+  content.image_type AS ENUM('backdrop', 'logo', 'poster', 'cover');
 
 CREATE TABLE
   content.image_providers (
@@ -172,15 +172,14 @@ INSERT INTO
   content.image_providers (name, is_external)
 VALUES
   ('local', false),
-  ('tmdb', true);
+  ('tmdb', true),
+  ('anilist', true);
 
 CREATE TABLE
   content.media_images (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
     media_id uuid NOT NULL REFERENCES content.media_items (id) ON DELETE CASCADE,
     image_type content.image_type NOT NULL,
-    width INTEGER,
-    height INTEGER,
     provider_name TEXT NOT NULL REFERENCES content.image_providers (name),
     path TEXT NOT NULL,
     is_primary BOOLEAN DEFAULT false,
