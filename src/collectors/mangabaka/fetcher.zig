@@ -130,9 +130,11 @@ pub const Fetch = struct {
                             &genres,
                             &images,
                         );
+                        break;
                     },
                     .my_anime_list => {
                         _ = response.source.my_anime_list orelse continue;
+                        i += 1;
                         try MALHandler.insert(
                             arena_alloc,
                             request,
@@ -142,6 +144,7 @@ pub const Fetch = struct {
                             &genres,
                             &images,
                         );
+                        break;
                     },
                     else => {},
                 }
