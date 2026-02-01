@@ -7,6 +7,7 @@ const Endpoints = EndpointGroup(.{
     GetLists,
     GetAllProgress,
     GetRatings,
+    ImportLetterboxdWatchlist,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
@@ -286,6 +287,57 @@ const GetAllProgress = Endpoint(struct {
         try res.json(responses, .{});
     }
 });
+
+const ImportLetterboxdWatchlist = Endpoint(struct {
+    const Params = struct {
+        id: []const u8,
+    };
+    const Response = struct {
+        failed_inserts: []LetterboxdImporter.Watchlist.Response,
+    };
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Params = Params,
+        },
+        .Response = Response,
+        .method = .POST,
+        .route_data = .{
+            .signed_in = true,
+            .is_multipart = true,
+        },
+        .path = "/api/profile/list/:id/import/letterboxd",
+    };
+
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+
+        const list = blk: {
+            const value = req.multipart.?.get("list") orelse {
+                handleResponse(res, .bad_request, "Missing \"list\" in multipart list.");
+                return;
+            };
+            break :blk value.value;
+        };
+
+        const failed_inserts = try LetterboxdImporter.Watchlist.import(
+            allocator,
+            ctx.database_pool,
+            ctx.user_id.?,
+            list,
+            req.params.id,
+        );
+
+        const response: Response = .{
+            .failed_inserts = failed_inserts,
+        };
+
+        res.status = 200;
+        try res.json(response, .{});
+    }
+});
+
+const LetterboxdImporter = @import("../../../importers/importer.zig").Letterboxd;
 
 const ProgressStatus = @import("../../../models/content/content.zig").Media.ProgressStatus;
 const ProfileModel = @import("../../../models/profiles/profiles.zig");

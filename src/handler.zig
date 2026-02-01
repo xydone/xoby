@@ -46,6 +46,8 @@ pub const RouteData = struct {
     refresh: bool = false,
     /// Requires elevated permissions.
     admin: bool = false,
+    // does this endpoint expect a "multipart/form-data"
+    is_multipart: bool = false,
 };
 
 /// This will be passed to every request, should include things that would be needed inside a request but cannot/shouldn't be initialized every time.

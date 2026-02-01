@@ -13,7 +13,8 @@ pub fn assertAllSameLength(instance: anytype, comptime fields_to_check: anytype)
 
     if (fields.len == 0) return;
 
-    const first_len = @field(instance, fields[0].name).len;
+    const first_field_name = fields_to_check[0];
+    const first_len = @field(instance, first_field_name).len;
 
     inline for (fields_to_check) |field_name| {
         const current_field = @field(instance, field_name);

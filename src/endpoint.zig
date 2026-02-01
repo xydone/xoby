@@ -9,6 +9,7 @@ pub fn EndpointRequest(comptime Body: type, comptime Params: type, comptime Quer
         body: Body,
         params: Params,
         query: Query,
+        multipart: ?*httpz.key_value.MultiFormKeyValue,
     };
 }
 
@@ -86,6 +87,8 @@ pub fn Endpoint(
 
         pub fn call(ctx: *Handler.RequestContext, req: *httpz.Request, res: *httpz.Response) !void {
             const allocator = res.arena;
+
+            const route_data: RouteData = T.endpoint_data.route_data;
             const request: EndpointRequest(T.endpoint_data.Request.Body, T.endpoint_data.Request.Params, T.endpoint_data.Request.Query) = .{
                 .body = blk: {
                     switch (@typeInfo(T.endpoint_data.Request.Body)) {
@@ -182,6 +185,12 @@ pub fn Endpoint(
                         },
                     }
                 },
+
+                .multipart = blk: {
+                    if (route_data.is_multipart == false) break :blk null;
+
+                    break :blk try req.multiFormData();
+                },
             };
 
             try callImpl(ctx, request, res);
@@ -220,7 +229,7 @@ test "Base | Endpoint | Request body" {
             .Response = undefined,
             .path = undefined,
             .method = undefined,
-            .route_data = undefined,
+            .route_data = .{},
         };
         pub fn call(_: *Handler.RequestContext, req: EndpointRequest(Body, void, void), _: *httpz.Response) !void {
             try std.testing.expectEqualStrings("abcd", req.body.string);
@@ -268,7 +277,7 @@ test "Base | Endpoint | Request params" {
             .Response = undefined,
             .path = undefined,
             .method = undefined,
-            .route_data = undefined,
+            .route_data = .{},
         };
         pub fn call(_: *Handler.RequestContext, req: EndpointRequest(void, Params, void), _: *httpz.Response) !void {
             try std.testing.expectEqualStrings("abcd", req.params.string);
@@ -334,7 +343,7 @@ test "Base | Endpoint | Request query" {
             .Response = undefined,
             .path = undefined,
             .method = undefined,
-            .route_data = undefined,
+            .route_data = .{},
         };
         pub fn call(_: *Handler.RequestContext, req: EndpointRequest(void, void, Query), _: *httpz.Response) !void {
             try std.testing.expectEqualStrings("abcd", req.query.string);

@@ -458,8 +458,80 @@ pub const GetAllProgress = struct {
     ;
 };
 
+/// Tries to match by [name,year] but if year is null, tries to match name only
+pub const ImportLetterboxdList = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+        list_id: []const u8,
+        titles: [][]const u8,
+        years: []?i64,
+        items_created_at: [][]const u8,
+    };
+
+    /// the movies that were not imported, due to either 0 movies that matched or more than 1 movies that matched
+    pub const Response = struct {
+        title: []const u8,
+        release_year: ?i64,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.title);
+        }
+    };
+
+    pub const Errors = error{
+        CannotCreate,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
+        assertAllSameLength(request, .{ "titles", "years", "items_created_at" });
+        var conn = try connection.acquire();
+        defer connection.release(conn);
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+                request.list_id,
+                request.titles,
+                request.years,
+                request.items_created_at,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotCreate;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+
+        var mapper = query.mapper(Response, .{});
+
+        while (mapper.next() catch return error.CannotCreate) |response| {
+            responses.append(allocator, .{
+                .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
+                .release_year = response.release_year,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string = @embedFile("queries/import_letterboxd_list.sql");
+};
+
+const assertAllSameLength = @import("../../util/assertSameLength.zig").assertAllSameLength;
 const ProgressStatus = @import("../../models/content/content.zig").Media.ProgressStatus;
 
+const Connection = @import("../../database.zig").Connection;
 const Pool = @import("../../database.zig").Pool;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;

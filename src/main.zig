@@ -40,6 +40,12 @@ pub fn main() !void {
     var server = try httpz.Server(*Handler).init(allocator, .{
         .port = config.port,
         .address = config.address,
+        .request = .{
+            // maximum amount of multiforms that can go through
+            .max_multiform_count = 1,
+            // reasonable max size for file uploads
+            .max_body_size = 5 * 1024 * 1024,
+        },
     }, &handler);
     defer {
         server.deinit();

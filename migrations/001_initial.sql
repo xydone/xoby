@@ -243,6 +243,9 @@ CREATE TABLE
   profiles.lists_items (
     list_id uuid REFERENCES profiles.lists (id) ON DELETE CASCADE,
     media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+    position INTEGER,
+    added_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (list_id, media_id)
   );
 
