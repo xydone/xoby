@@ -62,10 +62,10 @@
             // For that reason, MangaBaka's dump is used to only insert content from a given source.
             .allowed_sources = .{
                 .anilist,
+                // .my_anime_list,
                 // .anime_planet, // WARNING: not implemented
                 // .kitsu, // WARNING: not implemented
                 // .manga_updates, // WARNING: not implemented
-                // .my_anime_list, // WARNING: not implemented
                 // .shikimori, // WARNING: not implemented
             },
         },

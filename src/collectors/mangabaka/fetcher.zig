@@ -131,6 +131,18 @@ pub const Fetch = struct {
                             &images,
                         );
                     },
+                    .my_anime_list => {
+                        _ = response.source.my_anime_list orelse continue;
+                        try MALHandler.insert(
+                            arena_alloc,
+                            request,
+                            response,
+                            &manga,
+                            &staff,
+                            &genres,
+                            &images,
+                        );
+                    },
                     else => {},
                 }
             }
@@ -397,54 +409,6 @@ pub const State = struct {
     }
 };
 
-pub const APIResponse = struct {
-    id: u32,
-    title: []const u8,
-    description: ?[]const u8,
-    genres: ?[][]const u8,
-    total_chapters: ?[]const u8,
-    state: APIResponse.State,
-    source: Source,
-
-    pub const State = enum { active, merged };
-    pub const Source = struct {
-        anilist: ?AniList,
-
-        pub const AniList = struct {
-            id: ?u32,
-            rating: ?f32,
-            response: ?Response,
-        };
-
-        pub const Response = struct {
-            id: u32,
-            staff: Staff,
-            coverImage: ?CoverImage,
-        };
-
-        pub const Staff = struct {
-            edges: []StaffEdge,
-        };
-
-        pub const CoverImage = struct {
-            large: []const u8,
-        };
-
-        pub const StaffEdge = struct {
-            id: i32,
-            node: StaffNode,
-            role: []const u8,
-        };
-
-        pub const StaffNode = struct {
-            name: Names,
-            pub const Names = struct {
-                full: []const u8,
-            };
-        };
-    };
-};
-
 const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
 const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
 const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
@@ -455,6 +419,8 @@ const Database = @import("../../database.zig");
 
 const ImageType = @import("../../models/content/content.zig").ImageType;
 
+const APIResponse = @import("types.zig").APIResponse;
+const MALHandler = @import("myanimelist.zig");
 const AniListHandler = @import("anilist.zig");
 
 const Config = @import("../../config/config.zig").Collectors.MangaBaka;

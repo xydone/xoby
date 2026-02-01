@@ -1,4 +1,4 @@
-const log = std.log.scoped(.mangabaka_anilist);
+const log = std.log.scoped(.mangabaka_mal);
 
 pub fn insert(
     arena_alloc: Allocator,
@@ -9,28 +9,35 @@ pub fn insert(
     genres: *std.MultiArrayList(DatabaseRepresentation.Genre),
     images: *std.MultiArrayList(DatabaseRepresentation.Image),
 ) !void {
-    const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?});
+    const id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.my_anime_list.?.id});
     try manga.append(request.state.allocator, .{
-        .id = anilist_id,
-        .provider = "anilist",
+        .id = id,
+        .provider = "myanimelist",
         .release_date = null,
         .title = try arena_alloc.dupe(u8, response.title),
         .description = if (response.description) |desc| try arena_alloc.dupe(u8, desc) else null,
         .total_chapters = if (response.total_chapters) |str| try std.fmt.parseInt(i32, str, 10) else null,
     });
-    const raw_response = response.source.anilist.?.response orelse {
-        log.err("raw response not present! mangabaka id: {} | title: {s} | anilist id {s}. Skipping...", .{ response.id, response.title, anilist_id });
+    const raw_response = response.source.my_anime_list.?.response orelse {
+        log.err("raw response not present! mangabaka id: {} | title: {s} | mal id {s}. Skipping...", .{ response.id, response.title, id });
         return;
     };
 
-    for (raw_response.staff.edges) |edge| {
+    // TODO: use an actual role, has to be fixed upstream
+    // tracking https://github.com/jikan-me/jikan/issues/569
+    for (raw_response.authors, 0..) |author, i| {
+        const role_name = if (raw_response.authors.len == 1)
+            "Author"
+        else
+            try std.fmt.allocPrint(arena_alloc, "Author {d}", .{i + 1});
+
         try staff.append(request.state.allocator, .{
-            .name = try arena_alloc.dupe(u8, edge.node.name.full),
-            .external_id = try std.fmt.allocPrint(arena_alloc, "{}", .{edge.id}),
+            .name = try arena_alloc.dupe(u8, author.name),
+            .external_id = try std.fmt.allocPrint(arena_alloc, "{}", .{author.mal_id}),
             .bio = null,
-            .provider = "anilist",
-            .media_id = anilist_id,
-            .role_name = try arena_alloc.dupe(u8, edge.role),
+            .provider = "myanimelist",
+            .media_id = id,
+            .role_name = role_name,
             .character_name = null,
         });
     }
@@ -41,52 +48,43 @@ pub fn insert(
         for (list) |genre| {
             try genres.append(request.state.allocator, .{
                 .name = try arena_alloc.dupe(u8, genre),
-                .external_id = anilist_id,
+                .external_id = id,
             });
         }
     }
 
     images_blk: {
-        const cover_image = raw_response.coverImage orelse break :images_blk;
+        const img = raw_response.images orelse break :images_blk;
+        const jpg = img.jpg orelse break :images_blk;
         try images.append(request.state.allocator, .{
-            .path = try arena_alloc.dupe(u8, cover_image.large),
-            .provider = "anilist",
+            .path = try arena_alloc.dupe(u8, jpg.image_url),
+            .provider = "myanimelist",
             .is_primary = true,
             .image_type = .cover,
-            .external_media_id = anilist_id,
+            .external_media_id = id,
         });
     }
 }
 
-pub const AniList = struct {
-    id: ?u32,
-    rating: ?f32,
+pub const MyAnimeList = struct {
+    id: u32,
     response: ?Response,
 
-    pub const Response = struct {
-        id: u32,
-        staff: Staff,
-        coverImage: ?CoverImage,
+    const Response = struct {
+        authors: []Author,
+        images: ?ImageList,
     };
 
-    pub const Staff = struct {
-        edges: []StaffEdge,
+    const Author = struct {
+        name: []const u8,
+        mal_id: u32,
     };
 
-    pub const CoverImage = struct {
-        large: []const u8,
-    };
-
-    pub const StaffEdge = struct {
-        id: i32,
-        node: StaffNode,
-        role: []const u8,
-    };
-
-    pub const StaffNode = struct {
-        name: Names,
-        pub const Names = struct {
-            full: []const u8,
+    const ImageList = struct {
+        jpg: ?Image,
+        // webp: Image,
+        const Image = struct {
+            image_url: []const u8,
         };
     };
 };
