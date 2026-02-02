@@ -83,7 +83,13 @@ pub fn main() !void {
         server_instance = &server;
     }
 
-    try server.listen();
+    server.listen() catch |err| switch (err) {
+        error.AddressInUse => {
+            log.err("Address \"http://{s}:{d}/\" is in use.", .{ config.address, config.port });
+            return err;
+        },
+        else => return err,
+    };
 }
 
 fn shutdown(_: c_int) callconv(.c) void {
