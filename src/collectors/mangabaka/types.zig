@@ -6,12 +6,19 @@ pub const APIResponse = struct {
     total_chapters: ?[]const u8,
     state: APIResponse.State,
     source: Source,
+    content_rating: ContentRating,
 
     pub const State = enum { active, merged };
     pub const Source = struct {
         anilist: ?AniList,
         my_anime_list: ?MyAnimeList,
     };
+};
+
+pub const ContentRating = enum {
+    suggestive,
+    erotica,
+    pornographic,
 };
 
 const AniList = @import("anilist.zig").AniList;

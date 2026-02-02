@@ -106,6 +106,8 @@ pub const Fetch = struct {
                 _ = arena.reset(.retain_capacity);
             }
             reader.interface.toss(1);
+            // parser fails if limit its 36_000
+            @setEvalBranchQuota(100_000);
             const document: Parser.Document = parser.parseFromSlice(request.state.allocator, writer.written()) catch |err| {
                 log.err("Parser failed! {}", .{err});
                 return err;
@@ -114,6 +116,9 @@ pub const Fetch = struct {
             const response: APIResponse = try document.asLeaky(APIResponse, arena_alloc, .{});
 
             if (response.state != .active) continue;
+
+            // skip content that does not match out accepted content rating
+            request.state.config.allowed_content_ratings.get(response.content_rating) orelse continue;
 
             for (request.state.config.allowed_sources) |source| {
                 switch (source) {

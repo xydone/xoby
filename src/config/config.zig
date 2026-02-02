@@ -53,6 +53,9 @@ pub const Collectors = struct {
         database_path: ?[]const u8,
         batch_size: u32,
         allowed_sources: []Source,
+        /// if it is inside the hashmap, it is allowed
+        allowed_content_ratings: *ContentRatingMap,
+        pub const ContentRatingMap = std.AutoHashMap(MangaBakaContentRating, void);
 
         pub const Source = enum {
             anilist,
@@ -66,6 +69,7 @@ pub const Collectors = struct {
         pub fn deinit(self: @This(), allocator: Allocator) void {
             if (self.database_path) |p| allocator.free(p);
             allocator.free(self.allowed_sources);
+            self.allowed_content_ratings.deinit();
         }
     };
 
@@ -87,7 +91,16 @@ const ConfigFile = struct {
     address: []const u8,
     jwt_secret: ?[]const u8,
     assets_dir: ?[]const u8,
-    collectors: Collectors,
+    collectors: struct {
+        tmdb: Collectors.TMDB,
+        mangabaka: struct {
+            enable: bool,
+            database_path: ?[]const u8,
+            batch_size: u32,
+            allowed_sources: []Collectors.MangaBaka.Source,
+            allowed_content_ratings: []MangaBakaContentRating,
+        },
+    },
     env_file_dir: ?[]const u8,
 };
 
@@ -174,34 +187,37 @@ pub fn init(allocator: Allocator) InitErrors!Config {
             },
             .mangabaka = blk: {
                 const config = config_file.collectors.mangabaka;
-
+                const MangaBaka = Collectors.MangaBaka;
+                const allowed_content_ratings = try allocator.create(MangaBaka.ContentRatingMap);
+                allowed_content_ratings.* = MangaBaka.ContentRatingMap.init(allocator);
+                const empty_response: MangaBaka = .{
+                    .enable = false,
+                    .database_path = null,
+                    .batch_size = 0,
+                    .allowed_sources = &.{},
+                    .allowed_content_ratings = allowed_content_ratings,
+                };
                 if (!config.enable) {
-                    break :blk .{
-                        .enable = false,
-                        .database_path = null,
-                        .batch_size = 0,
-                        .allowed_sources = &.{},
-                    };
+                    break :blk empty_response;
                 }
 
                 // if enabled, make sure that the path exists
                 if (config.database_path) |p| {
                     const path = allocator.dupe(u8, p) catch return error.OutOfMemory;
+                    for (config.allowed_content_ratings) |rating| {
+                        try allowed_content_ratings.putNoClobber(rating, {});
+                    }
                     break :blk .{
                         .enable = true,
                         .database_path = path,
                         .batch_size = config.batch_size,
-                        .allowed_sources = try allocator.dupe(Collectors.MangaBaka.Source, config.allowed_sources),
+                        .allowed_sources = try allocator.dupe(MangaBaka.Source, config.allowed_sources),
+                        .allowed_content_ratings = allowed_content_ratings,
                     };
                 } else {
                     // mangabaka was enabled, but database_path was not present.
                     log.warn("Collector \"MangaBaka\" is enabled, but database_path is missing. The collector is disabled.", .{});
-                    break :blk .{
-                        .enable = false,
-                        .database_path = null,
-                        .batch_size = 0,
-                        .allowed_sources = &.{},
-                    };
+                    break :blk empty_response;
                 }
             },
         },
@@ -217,6 +233,7 @@ pub fn deinit(self: *Config, allocator: Allocator) void {
     self.collectors.deinit(allocator);
 }
 
+const MangaBakaContentRating = @import("../collectors/mangabaka/types.zig").ContentRating;
 const readFileZon = @import("common.zig").readFileZon;
 const Env = @import("env.zig");
 

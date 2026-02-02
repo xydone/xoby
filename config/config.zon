@@ -68,6 +68,12 @@
                 // .manga_updates, // WARNING: not implemented
                 // .shikimori, // WARNING: not implemented
             },
+            // Which content ratings will be fetched
+            .allowed_content_ratings = .{
+                .suggestive,
+                // .erotica,
+                // .pornographic,
+            },
         },
     },
 }
