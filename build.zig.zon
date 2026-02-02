@@ -31,6 +31,10 @@
             .url = "git+https://github.com/xydone/zimdjson?ref=0.15.x#b908f3abc02973a888f624d82fc1ab6a15d5e23a",
             .hash = "zimdjson-0.2.0-89pgxfMsBgBOeqNE6cpBXsTcIMpalLUYauR73v7yihyd",
         },
+        .libzip = .{
+            .url = "git+https://github.com/sashka/libzip#fd3051f719aee93872a55f554b0b3fc5270aab21",
+            .hash = "libzip-1.11.2-WX_L8EQ4AAC9YSQ1dhuNALqIuIPgZNkBdjQ0Ki7wC_W3",
+        },
     },
 
     .paths = .{

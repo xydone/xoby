@@ -289,48 +289,36 @@ const GetAllProgress = Endpoint(struct {
 });
 
 const ImportLetterboxdWatchlist = Endpoint(struct {
-    const Params = struct {
-        id: []const u8,
-    };
-    const Response = struct {
-        failed_inserts: []LetterboxdImporter.Watchlist.Response,
-    };
-
+    const Response = LetterboxdImporter.Import.Response;
     pub const endpoint_data: EndpointData = .{
-        .Request = .{
-            .Params = Params,
-        },
+        .Request = .{},
         .Response = Response,
         .method = .POST,
         .route_data = .{
             .signed_in = true,
             .is_multipart = true,
         },
-        .path = "/api/profile/list/:id/import/letterboxd",
+        .path = "/api/profile/import/letterboxd",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
 
-        const list = blk: {
-            const value = req.multipart.?.get("list") orelse {
-                handleResponse(res, .bad_request, "Missing \"list\" in multipart list.");
+        const file = blk: {
+            const value = req.multipart.?.get("zip") orelse {
+                handleResponse(res, .bad_request, "Missing \"zip\" in multipart list.");
                 return;
             };
             break :blk value.value;
         };
 
-        const failed_inserts = try LetterboxdImporter.Watchlist.import(
+        // NOTE: not deinitializing due to scope
+        const response = try LetterboxdImporter.Import.call(
             allocator,
             ctx.database_pool,
             ctx.user_id.?,
-            list,
-            req.params.id,
+            file,
         );
-
-        const response: Response = .{
-            .failed_inserts = failed_inserts,
-        };
 
         res.status = 200;
         try res.json(response, .{});

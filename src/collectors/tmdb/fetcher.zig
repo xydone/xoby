@@ -390,6 +390,7 @@ const Model = struct {
 
         const conn = request.state.database.acquire() catch return error.CannotAcquireConnection;
         defer conn.release();
+        errdefer conn.rollback() catch {};
 
         try conn.begin();
 

@@ -62,6 +62,13 @@ pub fn build(b: *std.Build) void {
     module.addImport("zimdjson", zimdjson.module("zimdjson"));
     openapi_module.addImport("zimdjson", zimdjson.module("zimdjson"));
 
+    const bzip_dependency = b.dependency("libzip", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    module.linkLibrary(bzip_dependency.artifact("zip"));
+    openapi_module.linkLibrary(bzip_dependency.artifact("zip"));
+
     const exe = b.addExecutable(.{
         .name = NAME,
         .root_module = module,

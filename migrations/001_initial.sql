@@ -213,7 +213,7 @@ CREATE TABLE
     status TEXT CHECK (
       status IN ('planned', 'in_progress', 'completed', 'dropped')
     ),
-    progress_value INTEGER NOT NULL,
+    progress_value INTEGER,
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
