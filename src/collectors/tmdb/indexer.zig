@@ -6,7 +6,7 @@ pub const Data = struct {
     // adult: bool,
     id: i64,
     // original_title: []u8,
-    // popularity: f32,
+    // popularity: f64,
     // video: bool,
 };
 
@@ -17,8 +17,9 @@ const AMOUNT_OF_PREALLOCATED_DATA = 500_000;
 pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8) !void {
     const Model = CollectorsModel.Create;
 
-    var id_list = try std.ArrayList(i64).initCapacity(allocator, AMOUNT_OF_PREALLOCATED_DATA);
-    defer id_list.deinit(allocator);
+    var items = std.MultiArrayList(Items).empty;
+    defer items.deinit(allocator);
+    try items.ensureTotalCapacity(allocator, AMOUNT_OF_PREALLOCATED_DATA);
 
     var json_string_writer = std.Io.Writer.Allocating.init(allocator);
     defer json_string_writer.deinit();
@@ -63,8 +64,8 @@ pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8
     var reader = data_file.reader(&buf);
 
     while (true) {
-        id_list.clearRetainingCapacity();
-        const amount_written = parse(&reader.interface, &id_list, &json_string_writer) catch |err| {
+        items.clearRetainingCapacity();
+        const amount_written = parse(&reader.interface, &items, &json_string_writer) catch |err| {
             log.err("Failed to parse data! {}", .{err});
             return error.ParserFailed;
         };
@@ -72,7 +73,8 @@ pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8
 
         const request: Model.Request = .{
             .provider = "tmdb",
-            .id_list = id_list.items,
+            .id_list = items.items(.id),
+            .popularity = items.items(.popularity),
             .media_type = .movie,
         };
 
@@ -83,9 +85,14 @@ pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8
     }
 }
 
+const Items = struct {
+    id: i64,
+    popularity: f64,
+};
+
 fn parse(
     reader: *std.Io.Reader,
-    temp_list: *std.ArrayList(i64),
+    list: *std.MultiArrayList(Items),
     writer: *std.Io.Writer.Allocating,
 ) !usize {
     var i: usize = 0;
@@ -106,13 +113,22 @@ fn parse(
         if (size == 0) {
             return i;
         }
+        const line = writer.written();
 
-        const id = parseID(writer.written()) orelse {
+        const id = parseID(line) orelse {
             log.err("can't find id in line: {s}", .{writer.written()});
             return error.MissingID;
         };
 
-        temp_list.appendAssumeCapacity(id);
+        const popularity = parsePopularity(line) orelse {
+            log.err("can't find popularity in line: {s}", .{writer.written()});
+            return error.MissingPopularity;
+        };
+
+        list.appendAssumeCapacity(.{
+            .id = id,
+            .popularity = popularity,
+        });
     }
     return i;
 }
@@ -131,6 +147,26 @@ fn parseID(line: []const u8) ?i64 {
     if (start == end) return null;
 
     return std.fmt.parseInt(i64, line[start..end], 10) catch null;
+}
+
+fn parsePopularity(line: []const u8) ?f64 {
+    const key = "\"popularity\":";
+    const index = std.mem.indexOf(u8, line, key) orelse return null;
+
+    var start = index + key.len;
+
+    while (start < line.len and line[start] == ' ') : (start += 1) {}
+
+    var end = start;
+    while (end < line.len) : (end += 1) {
+        const c = line[end];
+        const is_valid_char = std.ascii.isDigit(c) or c == '.';
+        if (!is_valid_char) break;
+    }
+
+    if (start == end) return null;
+
+    return std.fmt.parseFloat(f64, line[start..end]) catch null;
 }
 
 const CollectorsModel = @import("../../models/collectors/collectors.zig");

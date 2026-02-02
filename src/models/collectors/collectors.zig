@@ -5,8 +5,9 @@ const Status = enum { completed, pending, todo };
 pub const Create = struct {
     pub const Request = struct {
         provider: []const u8,
-        id_list: []i64,
         media_type: MediaType,
+        id_list: []i64,
+        popularity: []f64,
     };
 
     pub const Errors = error{
@@ -24,6 +25,7 @@ pub const Create = struct {
                 request.provider,
                 request.id_list,
                 request.media_type,
+                request.popularity,
             },
         ) catch |err| {
             const error_handler = ErrorHandler{ .conn = conn };
@@ -34,11 +36,7 @@ pub const Create = struct {
         };
     }
 
-    const query_string =
-        \\ INSERT INTO collectors.list (provider, external_id, media_type)
-        \\ SELECT $1, unnest($2::bigint[]), $3::content.media_type
-        \\ ON CONFLICT DO NOTHING
-    ;
+    const query_string = @embedFile("queries/create_many.sql");
 };
 
 pub const GetNotCompleted = struct {

@@ -20,6 +20,7 @@ WHERE
         )
       )
     ORDER BY
+      priority DESC,
       created_at ASC
     LIMIT
       $2 FOR

@@ -111,6 +111,7 @@ CREATE TABLE
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     status collectors.status DEFAULT 'todo' NOT NULL,
+    priority INT NOT NULL DEFAULT 0,
     PRIMARY KEY (provider, external_id)
   );
 
