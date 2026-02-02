@@ -35,7 +35,7 @@ WITH
       gen_random_uuid () AS generated_id
     FROM
       raw_input r
-      LEFT JOIN content.external_mappings m ON r.provider = m.provider
+      LEFT JOIN external.media m ON r.provider = m.provider
       AND r.ext_id = m.external_id
   ),
   final_data AS (
@@ -81,7 +81,7 @@ WITH
   ),
   upserted_mappings AS (
     INSERT INTO
-      content.external_mappings (media_id, provider, external_id, last_synced_at)
+      external.media (media_id, provider, external_id, last_synced_at)
     SELECT
       target_id,
       provider,

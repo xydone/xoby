@@ -20,7 +20,7 @@ WITH
       i.external_id
     FROM
       input_data i
-      JOIN content.person_external_mappings m ON i.provider = m.provider
+      JOIN external.people m ON i.provider = m.provider
       AND i.external_id = m.external_id
   ),
   updated_people AS (
@@ -60,7 +60,7 @@ WITH
   ),
   inserted_mappings AS (
     INSERT INTO
-      content.person_external_mappings (person_id, provider, external_id)
+      external.people (person_id, provider, external_id)
     SELECT
       ip.id,
       i.provider,

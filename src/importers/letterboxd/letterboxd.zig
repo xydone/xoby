@@ -16,9 +16,11 @@ pub const Import = struct {
         const Movie = struct {
             title: []const u8,
             year: ?i64,
+            reason: []const u8,
 
             pub fn deinit(self: @This(), allocator: Allocator) void {
                 allocator.free(self.title);
+                allocator.free(self.reason);
             }
         };
     };
@@ -68,6 +70,7 @@ pub const Import = struct {
             try watchlist_response.append(allocator, .{
                 .title = fail.title,
                 .year = fail.release_year,
+                .reason = fail.reason,
             });
         }
 
@@ -85,6 +88,7 @@ pub const Import = struct {
             try progress_response.append(allocator, .{
                 .title = fail.title,
                 .year = fail.release_year,
+                .reason = fail.reason,
             });
         }
 
@@ -100,6 +104,7 @@ pub const Import = struct {
             try ratings_response.append(allocator, .{
                 .title = fail.title,
                 .year = fail.release_year,
+                .reason = fail.reason,
             });
         }
 
@@ -153,10 +158,9 @@ pub const Progress = struct {
             var date = try nextField(&line);
             const name = try nextField(&line);
             const year = try nextField(&line);
+            const uri = try nextField(&line);
             // if we are not in a watch list, treat this like diary and try to find the watched date
             if (options.is_watchlist == false) {
-                // letterboxd_uri
-                _ = try nextField(&line);
                 // rating
                 _ = try nextField(&line);
                 // rewatch
@@ -170,6 +174,7 @@ pub const Progress = struct {
             try list_items.append(allocator, .{
                 .created_at = try allocator.dupe(u8, date),
                 .name = try allocator.dupe(u8, name),
+                .uri = try allocator.dupe(u8, uri),
                 .year = blk: {
                     if (year.len == 0) break :blk null;
                     break :blk std.fmt.parseInt(u32, year, 10) catch |err| {
@@ -186,6 +191,7 @@ pub const Progress = struct {
             .titles = list_items.items(.name),
             .created_at = list_items.items(.created_at),
             .years = list_items.items(.year),
+            .uris = list_items.items(.uri),
             .user_id = user_id,
             .status = status,
         };
@@ -197,7 +203,18 @@ pub const Progress = struct {
         );
     }
 
-    const Items = List.ListItems;
+    const Items = struct {
+        created_at: []const u8,
+        year: ?i64,
+        name: []const u8,
+        uri: []const u8,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.name);
+            allocator.free(self.created_at);
+            allocator.free(self.uri);
+        }
+    };
 };
 
 pub const Ratings = struct {

@@ -535,6 +535,7 @@ pub const ImportLetterboxdListToProgress = struct {
         user_id: []const u8,
         titles: [][]const u8,
         created_at: [][]const u8,
+        uris: [][]const u8,
         status: ProgressStatus,
         years: []?i64,
     };
@@ -543,9 +544,11 @@ pub const ImportLetterboxdListToProgress = struct {
     pub const Response = struct {
         title: []const u8,
         release_year: ?i64,
+        reason: []const u8,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
             allocator.free(self.title);
+            allocator.free(self.reason);
         }
     };
 
@@ -566,8 +569,10 @@ pub const ImportLetterboxdListToProgress = struct {
                 request.titles,
                 request.years,
                 request.created_at,
+                request.uris,
                 request.user_id,
                 request.status,
+                "letterboxd",
             },
             .{
                 .column_names = true,
@@ -590,6 +595,7 @@ pub const ImportLetterboxdListToProgress = struct {
             responses.append(allocator, .{
                 .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
                 .release_year = response.release_year,
+                .reason = allocator.dupe(u8, response.reason) catch return error.OutOfMemory,
             }) catch return error.OutOfMemory;
         }
 
@@ -613,9 +619,11 @@ pub const ImportLetterboxdRatings = struct {
     pub const Response = struct {
         title: []const u8,
         release_year: ?i64,
+        reason: []const u8,
 
         pub fn deinit(self: @This(), allocator: Allocator) void {
             allocator.free(self.title);
+            allocator.free(self.reason);
         }
     };
 
@@ -661,6 +669,7 @@ pub const ImportLetterboxdRatings = struct {
             responses.append(allocator, .{
                 .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
                 .release_year = response.release_year,
+                .reason = allocator.dupe(u8, response.reason) catch return error.OutOfMemory,
             }) catch return error.OutOfMemory;
         }
 

@@ -96,21 +96,6 @@ CREATE TABLE
     total_chapters INTEGER
   );
 
-CREATE TABLE
-  content.external_mappings (
-    media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    external_id TEXT NOT NULL,
-    last_synced_at TIMESTAMPTZ,
-    PRIMARY KEY (media_id, provider),
-    UNIQUE (provider, external_id)
-  );
-
--- index for over time scanning
-CREATE INDEX
-  idx_mappings_sync ON content.external_mappings (last_synced_at)
-WHERE
-  last_synced_at IS NULL;
 
 CREATE SCHEMA
   collectors;
@@ -139,14 +124,6 @@ CREATE TABLE
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
-CREATE TABLE
-  content.person_external_mappings (
-    person_id uuid REFERENCES content.people (id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    external_id TEXT NOT NULL,
-    PRIMARY KEY (person_id, provider),
-    UNIQUE (provider, external_id)
-  );
 
 CREATE TABLE
   content.media_staff (
@@ -248,6 +225,43 @@ CREATE TABLE
     updated_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (list_id, media_id)
   );
+
+--- meant to cover all of the data that comes down from external sources
+CREATE SCHEMA
+  external;
+
+CREATE TABLE
+  external.media (
+    media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    last_synced_at TIMESTAMPTZ,
+    PRIMARY KEY (media_id, provider),
+    UNIQUE (provider, external_id)
+  );
+
+-- index for over time scanning
+CREATE INDEX
+  idx_mappings_sync ON external.media (last_synced_at)
+WHERE
+  last_synced_at IS NULL;
+
+CREATE TABLE
+  external.people (
+    person_id uuid REFERENCES content.people (id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    PRIMARY KEY (person_id, provider),
+    UNIQUE (provider, external_id)
+  );
+
+CREATE TABLE external.progress_mapping (
+    progress_id uuid REFERENCES profiles.progress (id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    -- some sort of unique identifier (ex. the letterboxd link)
+    external_id TEXT NOT NULL,
+    PRIMARY KEY (progress_id, provider, external_id)
+);
 
 -- +goose Down
 SELECT
