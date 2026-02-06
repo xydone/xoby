@@ -2,6 +2,17 @@
 SELECT
   'up SQL query';
 
+-- extensions
+CREATE EXTENSION IF NOT EXISTS unaccent;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION public.immutable_unaccent(text)
+RETURNS text AS $$
+    SELECT public.unaccent($1);
+$$ LANGUAGE sql IMMUTABLE PARALLEL SAFE;
+-- +goose StatementEnd
+
 -- auth schema
 CREATE SCHEMA
   auth;
@@ -68,8 +79,16 @@ CREATE TABLE
     description TEXT,
     release_date DATE,
     media_type content.media_type NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+
+    search_vector tsvector GENERATED ALWAYS AS (
+      setweight(to_tsvector('english', public.immutable_unaccent(title)), 'A') ||
+      setweight(to_tsvector('english', coalesce(extract(year from release_date)::text, '')), 'B')
+    ) STORED
   );
+
+CREATE INDEX idx_media_search_vector ON content.media_items USING GIN (search_vector);
+CREATE INDEX idx_media_title_trgm ON content.media_items USING GIN (title gin_trgm_ops);
 
 CREATE TABLE
   content.movies (

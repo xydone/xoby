@@ -70,6 +70,7 @@ pub const Collectors = struct {
             if (self.database_path) |p| allocator.free(p);
             allocator.free(self.allowed_sources);
             self.allowed_content_ratings.deinit();
+            allocator.destroy(self.allowed_content_ratings);
         }
     };
 

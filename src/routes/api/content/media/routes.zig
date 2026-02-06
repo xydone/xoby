@@ -1,5 +1,3 @@
-const log = std.log.scoped(.media_route);
-
 const Endpoints = EndpointGroup(.{
     GetInformation,
     Rate,
@@ -7,6 +5,7 @@ const Endpoints = EndpointGroup(.{
     GetRating,
     CreateProgress,
     GetProgress,
+    Search,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
@@ -32,6 +31,7 @@ const GetInformation = Endpoint(struct {
     };
 
     const Model = MediaModel.GetInformation;
+    const log = std.log.scoped(.get_media_information);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
 
@@ -40,7 +40,7 @@ const GetInformation = Endpoint(struct {
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Get Information Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
@@ -48,6 +48,59 @@ const GetInformation = Endpoint(struct {
 
         res.status = 200;
         try res.json(response, .{});
+    }
+});
+
+const Search = Endpoint(struct {
+    const Query = struct {
+        search: []const u8,
+    };
+
+    const Response = Model.Response;
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{
+            .Query = Query,
+        },
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .signed_in = true,
+        },
+        .path = "/api/media",
+    };
+
+    const Model = MediaModel.Search;
+    const log = std.log.scoped(.search_media);
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, void, Query), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+
+        const request = Model.Request{
+            .search = req.query.search,
+            .limit = 50,
+        };
+
+        const responses = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| switch (err) {
+            error.NotFound => {
+                handleResponse(res, .not_found, null);
+                return;
+            },
+            else => {
+                log.err("Model failed! {}", .{err});
+                handleResponse(res, .internal_server_error, null);
+                return;
+            },
+        };
+        defer {
+            for (responses) |response| response.deinit(allocator);
+            allocator.free(responses);
+        }
+
+        res.status = 200;
+        try res.json(responses, .{});
     }
 });
 
@@ -78,6 +131,7 @@ const Rate = Endpoint(struct {
         .path = "/api/media/:id/rating",
     };
 
+    const log = std.log.scoped(.create_rating);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
         const Model = MediaModel.CreateRating;
@@ -92,7 +146,7 @@ const Rate = Endpoint(struct {
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Create Rating Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
@@ -128,6 +182,7 @@ const GetRating = Endpoint(struct {
         .path = "/api/media/:id/rating",
     };
 
+    const log = std.log.scoped(.get_rating);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
         const Model = MediaModel.GetRating;
@@ -138,7 +193,7 @@ const GetRating = Endpoint(struct {
         };
 
         const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Get Rating Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
@@ -182,6 +237,7 @@ const EditRating = Endpoint(struct {
         .path = "/api/media/rating/:rating_id",
     };
 
+    const log = std.log.scoped(.edit_rating);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
         const Model = MediaModel.EditRating;
@@ -193,7 +249,7 @@ const EditRating = Endpoint(struct {
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Edit Rating Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
@@ -211,7 +267,7 @@ const EditRating = Endpoint(struct {
 const CreateProgress = Endpoint(struct {
     const Body = struct {
         status: MediaModel.ProgressStatus,
-        progress_value: i32,
+        progress_value: ?i32 = null,
     };
 
     const Params = struct {
@@ -223,7 +279,7 @@ const CreateProgress = Endpoint(struct {
         user_id: []const u8,
         media_id: []const u8,
         status: MediaModel.ProgressStatus,
-        progress_value: i32,
+        progress_value: ?i32,
         updated_at: i64,
     };
 
@@ -240,6 +296,7 @@ const CreateProgress = Endpoint(struct {
         .path = "/api/media/:media_id/progress",
     };
 
+    const log = std.log.scoped(.create_progress);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
         const Model = MediaModel.CreateProgress;
@@ -252,7 +309,7 @@ const CreateProgress = Endpoint(struct {
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Create Progress Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };
@@ -294,6 +351,7 @@ const GetProgress = Endpoint(struct {
         .path = "/api/media/:id/progress",
     };
 
+    const log = std.log.scoped(.get_progress);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
         const Model = MediaModel.GetProgress;
@@ -304,7 +362,7 @@ const GetProgress = Endpoint(struct {
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
-            log.err("Get Progress Model failed! {}", .{err});
+            log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };

@@ -138,6 +138,65 @@ pub const GetInformation = struct {
     ;
 };
 
+pub const Search = struct {
+    pub const Request = struct {
+        search: []const u8,
+        limit: i64 = 50,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+        title: []const u8,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.title);
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        NotFound,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    /// Caller owns slice.
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
+
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.query(query_string, .{
+            request.search,
+            request.limit,
+        }) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = try .initCapacity(allocator, @intCast(request.limit));
+        defer responses.deinit(allocator);
+
+        while (query.next() catch return error.NotFound) |row| {
+            responses.appendAssumeCapacity(.{
+                .id = try UUID.toStringAlloc(allocator, row.get([]u8, 0)),
+                .title = try allocator.dupe(u8, row.get([]u8, 1)),
+            });
+        }
+
+        if (responses.items.len == 0) return error.NotFound;
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string = @embedFile("queries/search_media.sql");
+};
+
 pub const CreateRating = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -352,7 +411,7 @@ pub const CreateProgress = struct {
         user_id: []const u8,
         media_id: []const u8,
         status: ProgressStatus,
-        progress_value: i32,
+        progress_value: ?i32,
     };
 
     pub const Response = struct {
@@ -360,7 +419,7 @@ pub const CreateProgress = struct {
         user_id: []const u8,
         media_id: []const u8,
         status: ProgressStatus,
-        progress_value: i32,
+        progress_value: ?i32,
         created_at: i64,
 
         pub fn deinit(self: Response, allocator: Allocator) void {
@@ -410,11 +469,7 @@ pub const CreateProgress = struct {
         return response;
     }
 
-    const query_string =
-        \\ INSERT INTO profiles.progress (user_id, media_id, status, progress_value)
-        \\ VALUES ($1, $2, $3, $4)
-        \\ RETURNING *;
-    ;
+    const query_string = @embedFile("queries/create_progress.sql");
 };
 
 pub const GetProgress = struct {
@@ -476,6 +531,7 @@ pub const GetProgress = struct {
     ;
 };
 
+const Connection = @import("../../database.zig").Connection;
 const Pool = @import("../../database.zig").Pool;
 const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;
