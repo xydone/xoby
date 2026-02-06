@@ -70,6 +70,7 @@
             },
             // Which content ratings will be fetched
             .allowed_content_ratings = .{
+                .safe,
                 .suggestive,
                 // .erotica,
                 // .pornographic,
