@@ -9,7 +9,7 @@ pub fn insert(
     genres: *std.MultiArrayList(DatabaseRepresentation.Genre),
     images: *std.MultiArrayList(DatabaseRepresentation.Image),
 ) !void {
-    const id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.my_anime_list.?.id});
+    const id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.my_anime_list.id.?});
     try manga.append(request.state.allocator, .{
         .id = id,
         .provider = "myanimelist",
@@ -18,7 +18,7 @@ pub fn insert(
         .description = if (response.description) |desc| try arena_alloc.dupe(u8, desc) else null,
         .total_chapters = if (response.total_chapters) |str| try std.fmt.parseInt(i32, str, 10) else null,
     });
-    const raw_response = response.source.my_anime_list.?.response orelse {
+    const raw_response = response.source.my_anime_list.response orelse {
         log.err("raw response not present! mangabaka id: {} | title: {s} | mal id {s}. Skipping...", .{ response.id, response.title, id });
         return;
     };
@@ -67,7 +67,7 @@ pub fn insert(
 }
 
 pub const MyAnimeList = struct {
-    id: u32,
+    id: ?u32,
     response: ?Response,
 
     const Response = struct {

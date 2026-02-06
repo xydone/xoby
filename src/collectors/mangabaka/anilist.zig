@@ -9,7 +9,7 @@ pub fn insert(
     genres: *std.MultiArrayList(DatabaseRepresentation.Genre),
     images: *std.MultiArrayList(DatabaseRepresentation.Image),
 ) !void {
-    const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.?.id.?});
+    const anilist_id = try std.fmt.allocPrint(arena_alloc, "{}", .{response.source.anilist.id.?});
     try manga.append(request.state.allocator, .{
         .id = anilist_id,
         .provider = "anilist",
@@ -18,7 +18,7 @@ pub fn insert(
         .description = if (response.description) |desc| try arena_alloc.dupe(u8, desc) else null,
         .total_chapters = if (response.total_chapters) |str| try std.fmt.parseInt(i32, str, 10) else null,
     });
-    const raw_response = response.source.anilist.?.response orelse {
+    const raw_response = response.source.anilist.response orelse {
         log.err("raw response not present! mangabaka id: {} | title: {s} | anilist id {s}. Skipping...", .{ response.id, response.title, anilist_id });
         return;
     };

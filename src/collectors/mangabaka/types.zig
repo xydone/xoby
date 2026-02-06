@@ -10,12 +10,13 @@ pub const APIResponse = struct {
 
     pub const State = enum { active, merged };
     pub const Source = struct {
-        anilist: ?AniList,
-        my_anime_list: ?MyAnimeList,
+        anilist: AniList,
+        my_anime_list: MyAnimeList,
     };
 };
 
 pub const ContentRating = enum {
+    safe,
     suggestive,
     erotica,
     pornographic,

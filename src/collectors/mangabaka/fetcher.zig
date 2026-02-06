@@ -113,7 +113,11 @@ pub const Fetch = struct {
                 return err;
             };
 
-            const response: APIResponse = try document.asLeaky(APIResponse, arena_alloc, .{});
+            const response: APIResponse = document.asLeaky(APIResponse, arena_alloc, .{}) catch |err| {
+                log.err("parsing document to response type failed! {}", .{err});
+                log.debug("line: {s}", .{writer.written()});
+                return err;
+            };
 
             if (response.state != .active) continue;
 
@@ -123,8 +127,7 @@ pub const Fetch = struct {
             for (request.state.config.allowed_sources) |source| {
                 switch (source) {
                     .anilist => {
-                        const anilist = response.source.anilist orelse continue;
-                        _ = anilist.id orelse continue;
+                        _ = response.source.anilist.id orelse continue;
                         i += 1;
                         try AniListHandler.insert(
                             arena_alloc,
@@ -138,7 +141,7 @@ pub const Fetch = struct {
                         break;
                     },
                     .my_anime_list => {
-                        _ = response.source.my_anime_list orelse continue;
+                        _ = response.source.my_anime_list.id orelse continue;
                         i += 1;
                         try MALHandler.insert(
                             arena_alloc,
