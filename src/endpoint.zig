@@ -24,9 +24,29 @@ pub const EndpointData = struct {
 pub fn EndpointGroup(comptime endpoints: anytype) type {
     return struct {
         pub const endpoint_data = fill: {
-            var data: [endpoints.len]EndpointData = undefined;
-            for (endpoints, 0..) |E, i| {
-                data[i] = E.endpoint_data;
+            var total_count: usize = 0;
+            for (endpoints) |E| {
+                const T = @TypeOf(E.endpoint_data);
+                if (T == EndpointData) {
+                    total_count += 1;
+                } else {
+                    total_count += E.endpoint_data.len;
+                }
+            }
+
+            var data: [total_count]EndpointData = undefined;
+            var i: usize = 0;
+            for (endpoints) |E| {
+                const T = @TypeOf(E.endpoint_data);
+                if (T == EndpointData) {
+                    data[i] = E.endpoint_data;
+                    i += 1;
+                } else {
+                    for (E.endpoint_data) |d| {
+                        data[i] = d;
+                        i += 1;
+                    }
+                }
             }
             break :fill data;
         };
