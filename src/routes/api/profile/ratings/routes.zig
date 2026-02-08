@@ -1,5 +1,12 @@
 const log = std.log.scoped(.ratings_route);
 
+pub const Endpoints = EndpointGroup(.{
+    GetRatings,
+});
+
+pub const endpoint_data = Endpoints.endpoint_data;
+pub const init = Endpoints.init;
+
 const GetRatings = Endpoint(struct {
     const Response = []struct {
         id: []const u8,

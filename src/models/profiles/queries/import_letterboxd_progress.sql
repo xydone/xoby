@@ -46,12 +46,14 @@ WITH
   ),
   insertion_step AS (
     INSERT INTO
-      profiles.progress (user_id, media_id, status, created_at)
+      profiles.progress (user_id, media_id, status, created_at, progress_value, progress_unit)
     SELECT
       $5,
       media_id,
       $6,
       COALESCE(c_at, CURRENT_TIMESTAMP)
+      CASE WHEN $6 = 'completed' THEN 1.0 ELSE 0.0 END,
+      'percentage'::profiles.progress_unit
     FROM
       match_analysis
     WHERE

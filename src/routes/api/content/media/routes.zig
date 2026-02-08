@@ -267,7 +267,8 @@ const EditRating = Endpoint(struct {
 const CreateProgress = Endpoint(struct {
     const Body = struct {
         status: MediaModel.ProgressStatus,
-        progress_value: ?i32 = null,
+        progress_value: f64,
+        progress_unit: MediaModel.ProgressUnit,
     };
 
     const Params = struct {
@@ -279,7 +280,8 @@ const CreateProgress = Endpoint(struct {
         user_id: []const u8,
         media_id: []const u8,
         status: MediaModel.ProgressStatus,
-        progress_value: ?i32,
+        progress_value: f64,
+        progress_unit: MediaModel.ProgressUnit,
         updated_at: i64,
     };
 
@@ -306,6 +308,7 @@ const CreateProgress = Endpoint(struct {
             .media_id = req.params.media_id,
             .status = req.body.status,
             .progress_value = req.body.progress_value,
+            .progress_unit = req.body.progress_unit,
         };
 
         const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
@@ -321,6 +324,7 @@ const CreateProgress = Endpoint(struct {
             .media_id = response.media_id,
             .status = response.status,
             .progress_value = response.progress_value,
+            .progress_unit = response.progress_unit,
             .updated_at = response.created_at,
         }, .{});
     }
@@ -335,7 +339,8 @@ const GetProgress = Endpoint(struct {
         user_id: []const u8,
         media_id: []const u8,
         status: []const u8,
-        progress_value: i32,
+        progress_value: f64,
+        progress_unit: MediaModel.ProgressUnit,
         updated_at: i64,
     };
 
@@ -374,6 +379,7 @@ const GetProgress = Endpoint(struct {
             .media_id = response.media_id,
             .status = response.status,
             .progress_value = response.progress_value,
+            .progress_unit = response.progress_unit,
             .updated_at = response.updated_at,
         }, .{});
     }

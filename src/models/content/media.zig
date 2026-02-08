@@ -7,6 +7,11 @@ pub const ProgressStatus = enum {
     dropped,
 };
 
+pub const ProgressUnit = enum {
+    quantity,
+    percentage,
+};
+
 pub const GetInformation = struct {
     pub const Request = struct {
         media_id: []const u8,
@@ -411,7 +416,8 @@ pub const CreateProgress = struct {
         user_id: []const u8,
         media_id: []const u8,
         status: ProgressStatus,
-        progress_value: ?i32,
+        progress_value: f64,
+        progress_unit: ProgressUnit,
     };
 
     pub const Response = struct {
@@ -419,7 +425,8 @@ pub const CreateProgress = struct {
         user_id: []const u8,
         media_id: []const u8,
         status: ProgressStatus,
-        progress_value: ?i32,
+        progress_value: f64,
+        progress_unit: ProgressUnit,
         created_at: i64,
 
         pub fn deinit(self: Response, allocator: Allocator) void {
@@ -445,6 +452,7 @@ pub const CreateProgress = struct {
             request.media_id,
             request.status,
             request.progress_value,
+            request.progress_unit,
         }, .{
             .column_names = true,
         }) catch |err| {
@@ -482,7 +490,9 @@ pub const GetProgress = struct {
         user_id: []const u8,
         media_id: []const u8,
         status: []const u8,
-        progress_value: i32,
+        progress_value: f64,
+        progress_unit: ProgressUnit,
+        completion_percentage: f32,
         updated_at: i64,
 
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
@@ -516,19 +526,14 @@ pub const GetProgress = struct {
         defer row.deinit() catch {};
 
         var response = row.to(Response, .{ .allocator = allocator }) catch return error.CannotGet;
-
-        response.media_id = try UUID.toStringAlloc(allocator, response.media_id);
+        const raw_id = response.media_id;
+        defer allocator.free(raw_id);
+        response.media_id = try UUID.toStringAlloc(allocator, raw_id);
 
         return response;
     }
 
-    const query_string =
-        \\ SELECT * 
-        \\ FROM profiles.progress
-        \\ WHERE user_id = $1 AND media_id = $2
-        \\ ORDER BY created_at DESC
-        \\ LIMIT 1;
-    ;
+    const query_string = @embedFile("queries/get_progress.sql");
 };
 
 const Connection = @import("../../database.zig").Connection;

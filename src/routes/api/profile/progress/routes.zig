@@ -1,6 +1,6 @@
 const log = std.log.scoped(.progress_route);
 
-const Endpoints = EndpointGroup(.{
+pub const Endpoints = EndpointGroup(.{
     GetAllProgress,
 });
 

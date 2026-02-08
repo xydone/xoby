@@ -1,6 +1,6 @@
 const log = std.log.scoped(.lists_route);
 
-const Endpoints = EndpointGroup(.{
+pub const Endpoints = EndpointGroup(.{
     CreateList,
     ChangeList,
     GetList,

@@ -1,6 +1,9 @@
 const log = std.log.scoped(.profile_route);
 
 const Endpoints = EndpointGroup(.{
+    List.Endpoints,
+    Ratings.Endpoints,
+    Progress.Endpoints,
     ImportLetterboxdWatchlist,
 });
 
@@ -43,6 +46,10 @@ const ImportLetterboxdWatchlist = Endpoint(struct {
         try res.json(response, .{});
     }
 });
+
+const List = @import("list/routes.zig");
+const Progress = @import("progress/routes.zig");
+const Ratings = @import("ratings/routes.zig");
 
 const LetterboxdImporter = @import("../../../importers/importer.zig").Letterboxd;
 
