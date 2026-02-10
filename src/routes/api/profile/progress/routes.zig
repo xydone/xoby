@@ -2,11 +2,13 @@ const log = std.log.scoped(.progress_route);
 
 pub const Endpoints = EndpointGroup(.{
     GetAllProgress,
+    GetInProgress,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
 pub const init = Endpoints.init;
 
+/// only returns the last 50
 const GetAllProgress = Endpoint(struct {
     const Response = []struct {
         id: []const u8,
@@ -32,10 +34,49 @@ const GetAllProgress = Endpoint(struct {
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
+            .limit = 50,
         };
 
         const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
             log.err("Get All Progress Model failed! {}", .{err});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+
+        defer {
+            defer allocator.free(responses);
+            for (responses) |response| response.deinit(allocator);
+        }
+
+        res.status = 200;
+        try res.json(responses, .{});
+    }
+});
+
+const GetInProgress = Endpoint(struct {
+    const Response = []Model.Response;
+
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{},
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .signed_in = true,
+        },
+        .path = "/api/profile/progress/in-progress",
+    };
+
+    const Model = ProfileModel.GetAllStatus;
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+
+        const request = Model.Request{
+            .user_id = ctx.user_id.?,
+            .status = .in_progress,
+        };
+
+        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+            log.err("Get In Progress Progress Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
         };

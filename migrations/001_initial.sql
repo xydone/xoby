@@ -203,11 +203,12 @@ CREATE SCHEMA
   profiles;
 
 CREATE TYPE profiles.progress_unit AS ENUM ('quantity', 'percentage');
+CREATE TYPE profiles.progress_status AS ENUM ('planned', 'in_progress', 'completed', 'dropped');
 CREATE TABLE profiles.progress (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid (),
     user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
     media_id uuid REFERENCES content.media_items (id) ON DELETE CASCADE,
-    status TEXT CHECK (status IN ('planned', 'in_progress', 'completed', 'dropped')),
+    status profiles.progress_status,
     -- in case of quantity, should be an integer
     -- it will be a quantity when, for example, it is a manga - it represents the read chapters
     -- in the case of percentage, its the completion percentage
@@ -222,23 +223,21 @@ CREATE INDEX idx_progress_latest ON profiles.progress (user_id, media_id, create
 -- because progress can have different types, we use this view to normalize things
 CREATE OR REPLACE VIEW profiles.progress_summary AS
 SELECT 
+    p.id AS progress_id,
     p.user_id,
     p.media_id,
+    m.title AS media_title,
     m.media_type,
     p.status,
     p.progress_value,
     p.progress_unit,
+    p.created_at,
     CASE 
-        -- if its a percentage, enforce 0-1
-        -- query shortcircuits here if its a percentage
         WHEN p.progress_unit = 'percentage' THEN LEAST(p.progress_value, 1.0)
-        -- we take read value as page/total
         WHEN m.media_type = 'manga' AND ma.total_chapters > 0 THEN 
             LEAST(p.progress_value / ma.total_chapters, 1.0)
-        -- we take read value as page/total
         WHEN m.media_type = 'book' AND b.total_pages > 0 THEN 
             LEAST(p.progress_value / b.total_pages, 1.0)
-        -- when no totals, either completed or not
         ELSE (CASE WHEN p.status = 'completed' THEN 1.0 ELSE 0 END)
     END AS completion_percentage
 FROM profiles.progress p

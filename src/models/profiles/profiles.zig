@@ -390,6 +390,7 @@ pub const GetRatings = struct {
 pub const GetAllProgress = struct {
     pub const Request = struct {
         user_id: []const u8,
+        limit: u32,
     };
 
     pub const Response = struct {
@@ -420,6 +421,7 @@ pub const GetAllProgress = struct {
             query_string,
             .{
                 request.user_id,
+                request.limit,
             },
             .{
                 .column_names = true,
@@ -451,11 +453,85 @@ pub const GetAllProgress = struct {
         return responses.toOwnedSlice(allocator);
     }
 
-    const query_string =
-        \\ SELECT *
-        \\ FROM profiles.ratings
-        \\ WHERE user_id = $1;
-    ;
+    const query_string = @embedFile("queries/get_all_progress.sql");
+};
+
+pub const GetAllStatus = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+        status: ProgressStatus,
+    };
+
+    pub const Response = struct {
+        progress_id: []const u8,
+        media_id: []const u8,
+        media_title: []const u8,
+        media_type: []const u8,
+        status: ProgressStatus,
+        progress_value: f64,
+        completion_percentage: f64,
+        progress_unit: ProgressUnit,
+        created_at: i64,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.progress_id);
+            allocator.free(self.media_id);
+            allocator.free(self.media_title);
+            allocator.free(self.media_type);
+        }
+    };
+
+    pub const Errors = error{
+        CannotGet,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
+        var conn = database.acquire() catch return error.CannotAcquireConnection;
+        defer conn.release();
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+                request.status,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotGet;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+
+        var mapper = query.mapper(Response, .{});
+
+        while (mapper.next() catch return error.CannotGet) |response| {
+            responses.append(allocator, .{
+                .progress_id = try UUID.toStringAlloc(allocator, response.progress_id),
+                .media_id = allocator.dupe(u8, response.media_id) catch return error.OutOfMemory,
+                .status = response.status,
+                .media_title = try allocator.dupe(u8, response.media_title),
+                .media_type = try allocator.dupe(u8, response.media_type),
+                .progress_value = response.progress_value,
+                .completion_percentage = response.completion_percentage,
+                .progress_unit = response.progress_unit,
+                .created_at = response.created_at,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string = @embedFile("queries/get_all_status.sql");
 };
 
 /// Tries to match by [name,year] but if year is null, tries to match name only
@@ -687,6 +763,7 @@ const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../database.zig").ErrorHandler;
 
 const ProgressStatus = @import("../content/media.zig").ProgressStatus;
+const ProgressUnit = @import("../content/media.zig").ProgressUnit;
 
 const UUID = @import("../../util/uuid.zig");
 

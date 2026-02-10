@@ -492,7 +492,7 @@ pub const GetProgress = struct {
         status: []const u8,
         progress_value: f64,
         progress_unit: ProgressUnit,
-        completion_percentage: f32,
+        completion_percentage: f64,
         updated_at: i64,
 
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
