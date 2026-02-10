@@ -20,7 +20,7 @@ pub fn main() !void {
     var config = try Config.init(allocator);
     defer config.deinit(allocator);
 
-    var database = try Database.init(allocator, config);
+    var database = try Database.init(allocator, config, .{});
     defer database.deinit();
 
     var redis_client = try redis.Client.init(allocator, config.redis.address, config.redis.port);

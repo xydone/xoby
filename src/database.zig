@@ -27,8 +27,11 @@ pub const Connection = union(enum) {
     }
 };
 
-pub fn init(allocator: Allocator, config: Config) !*Pool {
-    const pool = try pg.Pool.init(allocator, .{ .size = 5, .connect = .{
+pub const InitOptions = struct {
+    check_for_admin: bool = true,
+};
+pub fn init(allocator: Allocator, config: Config, options: InitOptions) !*Pool {
+    const pool = pg.Pool.init(allocator, .{ .size = 5, .connect = .{
         .port = config.database.port,
         .host = config.database.host,
     }, .auth = .{
@@ -36,9 +39,13 @@ pub fn init(allocator: Allocator, config: Config) !*Pool {
         .database = config.database.name,
         .password = config.database.password,
         .timeout = 10_000,
-    } });
+    } }) catch |err| {
+        log.err("failed to initialize database! {}", .{err});
+        log.debug("trying to use host {s} and port {}", .{ config.database.host, config.database.port });
+        return err;
+    };
 
-    try hasAdmin(allocator, pool);
+    if (options.check_for_admin) try hasAdmin(allocator, pool);
 
     return pool;
 }

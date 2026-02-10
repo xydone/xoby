@@ -34,7 +34,7 @@ const CreateList = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.CreateList;
+        const Model = ProfileModel.List.CreateList;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
@@ -42,7 +42,11 @@ const CreateList = Endpoint(struct {
             .is_public = req.body.is_public,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const response = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| {
             log.err("Create List Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -67,7 +71,7 @@ const GetList = Endpoint(struct {
         name: []const u8,
         is_public: bool,
         created_at: i64,
-        items: []ProfileModel.GetList.Response.Item,
+        items: []ProfileModel.List.GetList.Response.Item,
     };
 
     pub const endpoint_data: EndpointData = .{
@@ -84,14 +88,14 @@ const GetList = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.GetList;
+        const Model = ProfileModel.List.GetList;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
             .list_id = req.params.id,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const response = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Get List Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -131,13 +135,13 @@ const GetLists = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.GetLists;
+        const Model = ProfileModel.List.GetLists;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Get List Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -158,6 +162,9 @@ const ChangeList = Endpoint(struct {
         name: []const u8,
         is_public: bool,
     };
+    const Params = struct {
+        list_id: []const u8,
+    };
 
     const Response = struct {
         id: []const u8,
@@ -166,26 +173,32 @@ const ChangeList = Endpoint(struct {
     pub const endpoint_data: EndpointData = .{
         .Request = .{
             .Body = Body,
+            .Params = Params,
         },
         .Response = Response,
         .method = .PATCH,
         .route_data = .{
             .signed_in = true,
         },
-        .path = "/api/profile/list",
+        .path = "/api/profile/list/:list_id",
     };
 
-    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, void, void), res: *httpz.Response) anyerror!void {
+    pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(Body, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.CreateList;
+        const Model = ProfileModel.List.ChangeList;
 
         const request = Model.Request{
+            .id = req.params.list_id,
             .user_id = ctx.user_id.?,
             .name = req.body.name,
             .is_public = req.body.is_public,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const response = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| {
             log.err("Change List Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -226,7 +239,7 @@ const GetRatings = Endpoint(struct {
             .user_id = ctx.user_id.?,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Get Ratings Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -269,7 +282,7 @@ const GetAllProgress = Endpoint(struct {
             .user_id = ctx.user_id.?,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Get All Progress Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
