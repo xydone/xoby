@@ -28,7 +28,7 @@ const GetRatings = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.GetRatings;
+        const Model = ProfileModel.Ratings.Get;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,

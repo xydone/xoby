@@ -442,9 +442,9 @@ fn extractFile(allocator: std.mem.Allocator, zip_handle: *zip.zip_t, target_name
     return buffer;
 }
 
-const ImportLetterboxdRatings = @import("../../models/profiles/profiles.zig").ImportLetterboxdRatings;
-const ImportLetterboxdListToProgress = @import("../../models/profiles/profiles.zig").ImportLetterboxdListToProgress;
-const ImportLetterboxdListToList = @import("../../models/profiles/profiles.zig").ImportLetterboxdListToList;
+const ImportLetterboxdRatings = @import("../../models/profiles/profiles.zig").Ratings.ImportLetterboxd;
+const ImportLetterboxdListToProgress = @import("../../models/profiles/profiles.zig").Progress.ImportLetterboxd;
+const ImportLetterboxdListToList = @import("../../models/profiles/profiles.zig").List.ImportLetterboxd;
 const ProgressStatus = @import("../../models/content/media.zig").ProgressStatus;
 
 const Config = @import("../../config/config.zig");

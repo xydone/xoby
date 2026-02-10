@@ -628,8 +628,215 @@ test "Model | Profile | ChangeList | Allocation Failures" {
     );
 }
 
-const assertAllSameLength = @import("../../../util/assertSameLength.zig").assertAllSameLength;
+/// Tries to match by [name,year] but if year is null, tries to match name only
+pub const ImportLetterboxd = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+        list_id: []const u8,
+        titles: [][]const u8,
+        years: []?i64,
+        items_created_at: [][]const u8,
+    };
 
+    /// the movies that were not imported, due to either 0 movies that matched or more than 1 movies that matched
+    pub const Response = struct {
+        title: []const u8,
+        release_year: ?i64,
+
+        pub fn deinit(self: @This(), allocator: Allocator) void {
+            allocator.free(self.title);
+        }
+    };
+
+    pub const Errors = error{
+        CannotCreate,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
+        assertAllSameLength(request, .{ "titles", "years", "items_created_at" });
+        var conn = try connection.acquire();
+        defer connection.release(conn);
+        const error_handler = ErrorHandler{ .conn = conn };
+        var query = conn.queryOpts(
+            query_string,
+            .{
+                request.user_id,
+                request.list_id,
+                request.titles,
+                request.years,
+                request.items_created_at,
+            },
+            .{
+                .column_names = true,
+            },
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotCreate;
+        };
+        defer query.deinit();
+
+        var responses: std.ArrayList(Response) = .empty;
+        defer responses.deinit(allocator);
+        errdefer {
+            for (responses.items) |item| allocator.free(item.title);
+        }
+
+        var mapper = query.mapper(Response, .{});
+
+        while (mapper.next() catch return error.CannotCreate) |response| {
+            const title = allocator.dupe(u8, response.title) catch return error.OutOfMemory;
+            errdefer allocator.free(title);
+            responses.append(allocator, .{
+                .title = title,
+                .release_year = response.release_year,
+            }) catch return error.OutOfMemory;
+        }
+
+        return responses.toOwnedSlice(allocator);
+    }
+
+    const query_string = @embedFile("queries/import_letterboxd_list.sql");
+};
+
+test "Model | Profile | List | ImportLetterboxd" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | ImportLetterboxd";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const list_id = blk: {
+        const request: CreateList.Request = .{
+            .user_id = setup.user.id,
+            .name = test_name,
+            .is_public = true,
+        };
+
+        const response = try CreateList.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+        break :blk response.id;
+    };
+    defer allocator.free(list_id);
+
+    const count = 10;
+    var titles = try allocator.alloc([]const u8, count);
+    var years = try allocator.alloc(?i64, count);
+    var items_created_at = try allocator.alloc([]const u8, count);
+    defer {
+        for (titles) |title| allocator.free(title);
+        allocator.free(titles);
+        allocator.free(years);
+        allocator.free(items_created_at);
+    }
+
+    for (0..count) |i| {
+        titles[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d}", .{ test_name, i });
+        years[i] = 2000 + @as(u32, @intCast(i));
+        // TODO: test this too
+        items_created_at[i] = "01-01-2000";
+    }
+
+    const request: ImportLetterboxd.Request = .{
+        .user_id = setup.user.id,
+        .list_id = list_id,
+        .titles = titles,
+        .years = years,
+        .items_created_at = items_created_at,
+    };
+
+    const responses = try ImportLetterboxd.call(
+        allocator,
+        .{ .database = test_env.database_pool },
+        request,
+    );
+    defer {
+        for (responses) |response| response.deinit(allocator);
+        allocator.free(responses);
+    }
+
+    for (responses, 0..) |response, i| {
+        // NOTE: expected behaviour is to have the values return in the same order they came in
+        try std.testing.expectEqualStrings(request.titles[i], response.title);
+        try std.testing.expectEqual(request.years[i], response.release_year);
+    }
+}
+
+test "Model | Profile | List | ImportLetterboxd | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | ImportLetterboxd | Allocation Failures";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const list_id = blk: {
+        const request: CreateList.Request = .{
+            .user_id = setup.user.id,
+            .name = test_name,
+            .is_public = true,
+        };
+
+        const response = try CreateList.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+        break :blk response.id;
+    };
+    defer allocator.free(list_id);
+
+    const count = 10;
+    var titles = try allocator.alloc([]const u8, count);
+    var years = try allocator.alloc(?i64, count);
+    var items_created_at = try allocator.alloc([]const u8, count);
+    defer {
+        for (titles) |title| allocator.free(title);
+        allocator.free(titles);
+        allocator.free(years);
+        allocator.free(items_created_at);
+    }
+
+    for (0..count) |i| {
+        titles[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d}", .{ test_name, i });
+        years[i] = 2000 + @as(u32, @intCast(i));
+        // TODO: test this too
+        items_created_at[i] = "01-01-2000";
+    }
+
+    const request: ImportLetterboxd.Request = .{
+        .user_id = setup.user.id,
+        .list_id = list_id,
+        .titles = titles,
+        .years = years,
+        .items_created_at = items_created_at,
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        allocator,
+        struct {
+            fn call(alloc: Allocator, conn: Connection, req: ImportLetterboxd.Request) !void {
+                const responses = try ImportLetterboxd.call(alloc, conn, req);
+                for (responses) |response| response.deinit(alloc);
+                allocator.free(responses);
+            }
+        }.call,
+        .{
+            Connection{ .database = test_env.database_pool },
+            request,
+        },
+    );
+}
+
+const assertAllSameLength = @import("../../../util/assertSameLength.zig").assertAllSameLength;
 const Connection = @import("../../../database.zig").Connection;
 const Pool = @import("../../../database.zig").Pool;
 const DatabaseErrors = @import("../../../database.zig").DatabaseErrors;

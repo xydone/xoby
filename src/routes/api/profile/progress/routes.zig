@@ -30,7 +30,7 @@ const GetAllProgress = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.GetAllProgress;
+        const Model = ProfileModel.Progress.GetAll;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
@@ -66,7 +66,7 @@ const GetInProgress = Endpoint(struct {
         .path = "/api/profile/progress/in-progress",
     };
 
-    const Model = ProfileModel.GetAllStatus;
+    const Model = ProfileModel.Progress.GetAllStatus;
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
 
