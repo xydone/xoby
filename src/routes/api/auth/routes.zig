@@ -3,6 +3,7 @@ const log = std.log.scoped(.auth_route);
 const Endpoints = EndpointGroup(.{
     Register,
     Login,
+    Logout,
     CreateAPIKey,
     Refresh,
     EditUserRole,
@@ -63,7 +64,7 @@ const Login = Endpoint(struct {
     const Response = struct {
         access_token: []const u8,
         refresh_token: []const u8,
-        expires_in: i32,
+        expires_in: u32,
     };
     pub const endpoint_data: EndpointData = .{
         .Request = .{
@@ -86,6 +87,8 @@ const Login = Endpoint(struct {
             .database_pool = ctx.database_pool,
             .jwt_secret = jwt_secret,
             .redis_client = ctx.redis_client,
+            .access_token_expiry = ctx.config.access_token_expiry,
+            .refresh_token_expiry = ctx.config.refresh_token_expiry,
         };
 
         const request: Model.Request = .{
@@ -163,7 +166,7 @@ const Refresh = Endpoint(struct {
     const Response = struct {
         access_token: []const u8,
         refresh_token: []const u8,
-        expires_in: i32,
+        expires_in: u32,
     };
     pub const endpoint_data: EndpointData = .{
         .Request = .{},
@@ -184,6 +187,7 @@ const Refresh = Endpoint(struct {
             ctx.redis_client,
             ctx.refresh_token.?,
             jwt_secret,
+            ctx.config.access_token_expiry,
         ) catch |err| switch (err) {
             Model.Errors.UserNotFound => {
                 handleResponse(res, .unauthorized, null);
@@ -250,6 +254,34 @@ const EditUserRole = Endpoint(struct {
             .username = response.username,
             .role = response.role,
         }, .{});
+    }
+});
+
+const Logout = Endpoint(struct {
+    const Response = struct {};
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{},
+        .Response = Response,
+        .method = .POST,
+        .path = "/api/auth/logout",
+        .route_data = .{
+            .refresh = true,
+        },
+    };
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+        const Model = AuthModel.InvalidateToken;
+
+        _ = Model.call(
+            allocator,
+            ctx.redis_client,
+            ctx.refresh_token.?,
+        ) catch |err| {
+            log.err("Logout model failed! {s}", .{@errorName(err)});
+            handleResponse(res, .internal_server_error, null);
+            return;
+        };
+        res.status = 200;
     }
 });
 

@@ -5,6 +5,8 @@ redis: Redis,
 jwt_secret: []u8,
 /// Absolute path to the folder where assets, such as cover arts, are stored.
 assets_dir: []u8,
+access_token_expiry: u32,
+refresh_token_expiry: u32,
 collectors: Collectors,
 
 const Database = struct {
@@ -92,6 +94,8 @@ const ConfigFile = struct {
     address: []const u8,
     jwt_secret: ?[]const u8,
     assets_dir: ?[]const u8,
+    access_token_expiry: u32,
+    refresh_token_expiry: u32,
     collectors: struct {
         tmdb: Collectors.TMDB,
         mangabaka: struct {
@@ -160,6 +164,8 @@ pub fn init(allocator: Allocator) InitErrors!Config {
         },
         .jwt_secret = jwt_secret,
         .assets_dir = assets_dir,
+        .access_token_expiry = config_file.access_token_expiry,
+        .refresh_token_expiry = config_file.refresh_token_expiry,
         .collectors = .{
             .tmdb = .{
                 .enable = config_file.collectors.tmdb.enable,

@@ -18,6 +18,17 @@
     // If null, it will refer to the current working directory.
     .env_file_dir = null,
 
+    // How often the access token (short-lived token that can be refreshed by the refresh token) will expire.
+    // The value represents minutes.
+    // WARNING: high expiry times mean a user could log-out and their access token could still be usable for long after.
+    // for example, an expiry of 30 minutes means its possible for a user to sign-out, yet have that session be valid for another 30 minutes.
+    .access_token_expiry = 5, // 5 minutes
+
+    // How often the refresh token will expire.
+    // The value represents minutes.
+    // WARNING: high expiry times mean an attacker that can gain access to the refresh token can keep refreshing access tokens until it expires.
+    .refresh_token_expiry = 10_080, // 7 days
+
     // List of metadata collectors
     .collectors = .{
         // The Movie Database

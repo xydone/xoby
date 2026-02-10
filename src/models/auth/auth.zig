@@ -1,5 +1,3 @@
-const log = std.log.scoped(.auth_model);
-
 pub const Role = enum { user, admin };
 
 /// what is stored on redis
@@ -8,11 +6,8 @@ const UserSession = struct {
     role: Role,
 };
 
-const ACCESS_TOKEN_EXPIRY = 15 * 60;
-const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60;
-
-inline fn generateAccessTokenExpiry() i64 {
-    return std.time.timestamp() + ACCESS_TOKEN_EXPIRY;
+inline fn generateAccessTokenExpiry(expiry: u32) i64 {
+    return std.time.timestamp() + expiry;
 }
 
 pub const CreateUser = struct {
@@ -101,7 +96,7 @@ pub const CreateToken = struct {
     pub const Response = struct {
         access_token: []const u8,
         refresh_token: []const u8,
-        expires_in: i32,
+        expires_in: u32,
 
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
             allocator.free(self.access_token);
@@ -114,6 +109,8 @@ pub const CreateToken = struct {
         database_pool: *Pool,
         jwt_secret: []const u8,
         redis_client: *redis.Client,
+        access_token_expiry: u32,
+        refresh_token_expiry: u32,
     };
 
     pub const Errors = error{
@@ -152,7 +149,7 @@ pub const CreateToken = struct {
         const isValidPassword = verifyPassword(props.allocator, hash, request.password) catch return error.CannotCreate;
         const claims = JWTClaims{
             .user_id = id,
-            .exp = generateAccessTokenExpiry(),
+            .exp = generateAccessTokenExpiry(props.access_token_expiry),
             .role = role,
         };
 
@@ -169,13 +166,13 @@ pub const CreateToken = struct {
         const value_string = jsonStringify(props.allocator, session) catch return error.OutOfMemory;
         defer props.allocator.free(value_string);
 
-        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, value_string, REFRESH_TOKEN_EXPIRY) catch return error.RedisError;
+        const response = props.redis_client.setWithExpiry(props.allocator, refresh_token, value_string, props.refresh_token_expiry) catch return error.RedisError;
         defer props.allocator.free(response);
 
         return Response{
             .access_token = access_token,
             .refresh_token = refresh_token,
-            .expires_in = ACCESS_TOKEN_EXPIRY,
+            .expires_in = props.access_token_expiry,
         };
     }
 
@@ -186,7 +183,7 @@ pub const RefreshToken = struct {
     pub const Response = struct {
         access_token: []const u8,
         refresh_token: []const u8,
-        expires_in: i32,
+        expires_in: u32,
 
         pub fn deinit(self: Response, allocator: std.mem.Allocator) void {
             allocator.free(self.access_token);
@@ -201,7 +198,13 @@ pub const RefreshToken = struct {
         CannotParseID,
         OutOfMemory,
     };
-    pub fn call(allocator: std.mem.Allocator, redis_client: *redis.Client, refresh_token: []const u8, jwt_secret: []const u8) Errors!Response {
+    pub fn call(
+        allocator: std.mem.Allocator,
+        redis_client: *redis.Client,
+        refresh_token: []const u8,
+        jwt_secret: []const u8,
+        access_token_expiry: u32,
+    ) Errors!Response {
         const value = redis_client.get(allocator, refresh_token) catch |err| switch (err) {
             error.KeyValuePairNotFound => return error.UserNotFound,
             else => return error.RedisError,
@@ -215,7 +218,7 @@ pub const RefreshToken = struct {
 
         const claims = JWTClaims{
             .user_id = session.id,
-            .exp = generateAccessTokenExpiry(),
+            .exp = generateAccessTokenExpiry(access_token_expiry),
             .role = session.role,
         };
 
@@ -224,21 +227,28 @@ pub const RefreshToken = struct {
         return Response{
             .access_token = access_token,
             .refresh_token = refresh_token,
-            .expires_in = ACCESS_TOKEN_EXPIRY,
+            .expires_in = access_token_expiry,
         };
     }
 };
 
+// TODO: make this blacklist active access tokens
 pub const InvalidateToken = struct {
-    pub const Props = struct {
-        allocator: std.mem.Allocator,
-        refresh_token: []const u8,
-        redis_client: *redis.Client,
-    };
+    pub const Errors = error{
+        CannotDelete,
+    } || DatabaseErrors;
 
-    pub fn call(props: Props) anyerror!bool {
-        const response = try props.redis_client.delete(props.allocator, props.refresh_token);
-        defer props.allocator.free(response);
+    const log = std.log.scoped(.invalidate_token);
+    pub fn call(
+        allocator: std.mem.Allocator,
+        redis_client: *redis.Client,
+        refresh_token: []const u8,
+    ) Errors!bool {
+        const response = redis_client.delete(allocator, refresh_token) catch |err| {
+            log.debug("redis call failed! {}", .{err});
+            return error.CannotDelete;
+        };
+        defer allocator.free(response);
         return if (std.mem.eql(u8, response, ":0")) false else true;
     }
 };
@@ -488,6 +498,8 @@ test "Model | Auth | Create" {
         .database_pool = test_env.database_pool,
         .jwt_secret = jwt_secret,
         .redis_client = test_env.redis_client,
+        .access_token_expiry = 5,
+        .refresh_token_expiry = 5,
     };
 
     const password = try std.fmt.allocPrint(allocator, "Testing password", .{});
@@ -536,6 +548,8 @@ test "Model | Auth | Refresh" {
         .database_pool = test_env.database_pool,
         .jwt_secret = jwt_secret,
         .redis_client = test_env.redis_client,
+        .access_token_expiry = 5,
+        .refresh_token_expiry = 5,
     };
     var create = try CreateToken.call(props, .{
         .username = test_name,
@@ -553,7 +567,13 @@ test "Model | Auth | Refresh" {
         const refresh = try allocator.dupe(u8, refresh_token);
         defer allocator.free(refresh);
 
-        const refresh_response = try RefreshToken.call(allocator, test_env.redis_client, refresh, jwt_secret);
+        const refresh_response = try RefreshToken.call(
+            allocator,
+            test_env.redis_client,
+            refresh,
+            jwt_secret,
+            props.access_token_expiry,
+        );
         defer refresh_response.deinit(allocator);
 
         try std.testing.expectEqualStrings(refresh_response.refresh_token, refresh_token);
@@ -577,6 +597,8 @@ test "Model | Auth | Invalidate" {
         .database_pool = test_env.database_pool,
         .jwt_secret = jwt_secret,
         .redis_client = test_env.redis_client,
+        .access_token_expiry = 5,
+        .refresh_token_expiry = 5,
     };
     var create = try CreateToken.call(props, .{
         .username = test_name,
@@ -591,11 +613,11 @@ test "Model | Auth | Invalidate" {
 
     // TEST
     {
-        const invalidate_response = try InvalidateToken.call(.{
-            .allocator = allocator,
-            .redis_client = test_env.redis_client,
-            .refresh_token = refresh_token,
-        });
+        const invalidate_response = try InvalidateToken.call(
+            allocator,
+            test_env.redis_client,
+            refresh_token,
+        );
         try std.testing.expect(invalidate_response);
     }
 }
@@ -617,6 +639,8 @@ test "Model | Auth | Create API Key" {
         .database_pool = test_env.database_pool,
         .jwt_secret = jwt_secret,
         .redis_client = test_env.redis_client,
+        .access_token_expiry = 5,
+        .refresh_token_expiry = 5,
     };
     var create = try CreateToken.call(props, .{
         .username = test_name,
@@ -657,6 +681,8 @@ test "Model | Auth | Create API Key with incorrect permissions" {
         .database_pool = test_env.database_pool,
         .jwt_secret = jwt_secret,
         .redis_client = test_env.redis_client,
+        .access_token_expiry = 5,
+        .refresh_token_expiry = 5,
     };
     var create = try CreateToken.call(props, .{
         .username = test_name,
