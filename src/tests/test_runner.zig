@@ -15,6 +15,9 @@ const Config = struct {
     filter: ?[]const u8,
     // skip base tests, such as the ones to the base endpoint struct.
     skip_base_tests: bool,
+    // allocation failure tests are tests which go through a function to see if errdefers are added properly
+    // by default they will not be executed as they take a long time
+    run_allocation_failure_tests: bool,
 
     pub fn init() Config {
         return Config{
@@ -23,6 +26,7 @@ const Config = struct {
             .fail_leak = false,
             .filter = null,
             .skip_base_tests = false,
+            .run_allocation_failure_tests = false,
         };
     }
 };
@@ -134,6 +138,7 @@ pub fn main() !void {
                 config.filter = filter;
             }
             if (std.mem.eql(u8, arg, "--skip-base-tests")) config.skip_base_tests = true;
+            if (std.mem.eql(u8, arg, "--run-allocation-failure-tests")) config.run_allocation_failure_tests = true;
         }
     }
 
@@ -187,7 +192,18 @@ pub fn main() !void {
         for (list.test_functions.items) |t| {
             if (is_fail_first_triggered or is_fail_leak_triggered) break :outer;
             current_test = makeNameFriendly(t.name);
-            if (config.skip_base_tests and isBase(current_test.?)) continue;
+            const name = current_test.?;
+            if (config.skip_base_tests and isBase(name)) continue;
+            const is_setup_teardown = isSetup(name) or isTeardown(name);
+            const is_alloc_test = isAllocationFailure(name);
+
+            if (config.skip_base_tests and isBase(name)) continue;
+
+            if (!is_setup_teardown) {
+                if (config.run_allocation_failure_tests != is_alloc_test) {
+                    continue;
+                }
+            }
 
             const params = TestList.CallbackParams{
                 .config = config,
@@ -273,6 +289,15 @@ fn isEndpoint(test_name: []const u8) bool {
 
 fn isBase(test_name: []const u8) bool {
     return std.mem.startsWith(u8, test_name, "Base |");
+}
+
+fn isAllocationFailure(test_name: []const u8) bool {
+    return std.mem.containsAtLeast(
+        u8,
+        test_name,
+        1,
+        "Allocation Failure",
+    );
 }
 
 pub const Printer = struct {

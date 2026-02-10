@@ -18,7 +18,11 @@ pub const TestEnvironment = struct {
     pub fn init(allocator: Allocator) InitErrors!void {
         const config = try Config.init(allocator);
 
-        const database = Database.init(allocator, config) catch return InitErrors.CouldntInitializeDB;
+        const database = Database.init(
+            allocator,
+            config,
+            .{ .check_for_admin = false },
+        ) catch return InitErrors.CouldntInitializeDB;
 
         const redis_client = try allocator.create(redis.Client);
         redis_client.* = try redis.Client.init(allocator, config.redis.address, config.redis.port);
