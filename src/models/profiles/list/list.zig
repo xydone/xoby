@@ -46,11 +46,11 @@ pub const CreateList = struct {
     const query_string = @embedFile("queries/create_list.sql");
 };
 
-test "Model | Profile | CreateList" {
+test "Model | Profile | List | CreateList" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | CreateList";
+    const test_name = "Model | Profile | List | CreateList";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -68,11 +68,11 @@ test "Model | Profile | CreateList" {
     defer response.deinit(allocator);
 }
 
-test "Model | Profile | CreateList | Allocation Failures" {
+test "Model | Profile | List | CreateList | Allocation Failures" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | CreateList | Allocation Failures";
+    const test_name = "Model | Profile | List | CreateList | Allocation Failures";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -220,11 +220,11 @@ pub const GetList = struct {
     const query_string = @embedFile("queries/get_list.sql");
 };
 
-test "Model | Profile | GetList" {
+test "Model | Profile | List | GetList" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | GetList";
+    const test_name = "Model | Profile | List | GetList";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -257,11 +257,11 @@ test "Model | Profile | GetList" {
     defer response.deinit(allocator);
 }
 
-test "Model | Profile | GetList | Allocation Failures" {
+test "Model | Profile | List | GetList | Allocation Failures" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | GetList | Allocation Failures";
+    const test_name = "Model | Profile | List | GetList | Allocation Failures";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -383,11 +383,11 @@ pub const GetLists = struct {
     const query_string = @embedFile("queries/get_lists.sql");
 };
 
-test "Model | Profile | GetLists" {
+test "Model | Profile | List | GetLists" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | GetLists";
+    const test_name = "Model | Profile | List | GetLists";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -435,11 +435,11 @@ test "Model | Profile | GetLists" {
     }
 }
 
-test "Model | Profile | GetLists | Allocation Failures" {
+test "Model | Profile | List | GetLists | Allocation Failures" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | GetLists | Allocation Failures";
+    const test_name = "Model | Profile | List | GetLists | Allocation Failures";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -541,11 +541,11 @@ pub const ChangeList = struct {
     const query_string = @embedFile("queries/change_list.sql");
 };
 
-test "Model | Profile | ChangeList" {
+test "Model | Profile | List | ChangeList" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | ChangeList";
+    const test_name = "Model | Profile | List | ChangeList";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -582,11 +582,11 @@ test "Model | Profile | ChangeList" {
     try std.testing.expectEqualStrings(request.id, response.id);
 }
 
-test "Model | Profile | ChangeList | Allocation Failures" {
+test "Model | Profile | List | ChangeList | Allocation Failures" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | ChangeList | Allocation Failures";
+    const test_name = "Model | Profile | List | ChangeList | Allocation Failures";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -703,11 +703,11 @@ pub const ImportLetterboxd = struct {
     const query_string = @embedFile("queries/import_letterboxd_list.sql");
 };
 
-test "Model | Profile | List | ImportLetterboxd" {
+test "Model | Profile | List | List | ImportLetterboxd" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | ImportLetterboxd";
+    const test_name = "Model | Profile | List | ImportLetterboxd";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 
@@ -774,7 +774,7 @@ test "Model | Profile | List | ImportLetterboxd | Allocation Failures" {
     const allocator = std.testing.allocator;
 
     const test_env = Tests.test_env;
-    const test_name = "Model | Profile | ImportLetterboxd | Allocation Failures";
+    const test_name = "Model | Profile | List | ImportLetterboxd | Allocation Failures";
     var setup = try TestSetup.init(test_env.database_pool, test_name);
     defer setup.deinit(allocator);
 

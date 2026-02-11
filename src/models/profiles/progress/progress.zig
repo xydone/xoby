@@ -1,3 +1,151 @@
+pub const Create = struct {
+    pub const Request = struct {
+        user_id: []const u8,
+        media_id: []const u8,
+        status: ProgressStatus,
+        progress_value: f64,
+        progress_unit: ProgressUnit,
+    };
+
+    pub const Response = struct {
+        id: []const u8,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+        }
+    };
+
+    pub const Errors = error{
+        CannotCreate,
+        OutOfMemory,
+        CannotParseID,
+    } || DatabaseErrors;
+
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
+        const error_handler = ErrorHandler{ .conn = conn };
+        var row = conn.rowOpts(
+            query_string,
+            .{
+                request.user_id,
+                request.media_id,
+                request.status,
+                request.progress_value,
+                request.progress_unit,
+            },
+            .{},
+        ) catch |err| {
+            const error_data = error_handler.handle(err);
+            if (error_data) |data| {
+                ErrorHandler.printErr(data);
+            }
+            return error.CannotCreate;
+        } orelse return error.CannotCreate;
+        defer row.deinit() catch {};
+
+        const id = try UUID.toStringAlloc(allocator, row.get([]u8, 0));
+        errdefer allocator.free(id);
+
+        return .{
+            .id = id,
+        };
+    }
+
+    const query_string = @embedFile("queries/create.sql");
+};
+
+test "Model | Profile | Progress | Create" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | Create";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const BookModel = @import("../../models.zig").Content.Books;
+    const media_id = blk: {
+        const request = BookModel.Create.Request{
+            .title = test_name,
+            .user_id = setup.user.id,
+            .release_date = null,
+            .total_pages = null,
+            .description = null,
+        };
+        const response = try BookModel.Create.call(
+            allocator,
+            test_env.database_pool,
+            request,
+        );
+        allocator.free(response.title);
+
+        break :blk response.id;
+    };
+    defer allocator.free(media_id);
+
+    const request: Create.Request = .{
+        .user_id = setup.user.id,
+        .media_id = media_id,
+        .status = .in_progress,
+        .progress_value = 0.13,
+        .progress_unit = .percentage,
+    };
+
+    const response = try Create.call(
+        allocator,
+        .{ .database = test_env.database_pool },
+        request,
+    );
+    response.deinit(allocator);
+}
+
+test "Model | Profile | Progress | Create | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | Create | Allocation Failure";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const BookModel = @import("../../models.zig").Content.Books;
+    const media_id = blk: {
+        const request = BookModel.Create.Request{
+            .title = test_name,
+            .user_id = setup.user.id,
+            .release_date = null,
+            .total_pages = null,
+            .description = null,
+        };
+        const response = try BookModel.Create.call(
+            allocator,
+            test_env.database_pool,
+            request,
+        );
+        allocator.free(response.title);
+
+        break :blk response.id;
+    };
+    defer allocator.free(media_id);
+
+    const request: Create.Request = .{
+        .user_id = setup.user.id,
+        .media_id = media_id,
+        .status = .in_progress,
+        .progress_value = 0.13,
+        .progress_unit = .percentage,
+    };
+
+    try std.testing.checkAllAllocationFailures(allocator, struct {
+        fn call(alloc: Allocator, conn: Connection, req: Create.Request) !void {
+            const response = try Create.call(alloc, conn, req);
+            response.deinit(allocator);
+        }
+    }.call, .{
+        Connection{ .database = test_env.database_pool },
+        request,
+    });
+}
+
 pub const GetAll = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -5,14 +153,16 @@ pub const GetAll = struct {
     };
 
     pub const Response = struct {
-        id: []const u8,
+        progress_id: []const u8,
         user_id: []const u8,
         media_id: []const u8,
+        progress_value: f64,
+        completion_percentage: f64,
         status: ProgressStatus,
         created_at: i64,
 
         pub fn deinit(self: Response, allocator: Allocator) void {
-            allocator.free(self.id);
+            allocator.free(self.progress_id);
             allocator.free(self.user_id);
             allocator.free(self.media_id);
         }
@@ -24,9 +174,9 @@ pub const GetAll = struct {
         CannotParseID,
     } || DatabaseErrors;
 
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
         const error_handler = ErrorHandler{ .conn = conn };
         var query = conn.queryOpts(
             query_string,
@@ -52,12 +202,20 @@ pub const GetAll = struct {
         var mapper = query.mapper(Response, .{});
 
         while (mapper.next() catch return error.CannotGet) |response| {
+            const id = try UUID.toStringAlloc(allocator, response.progress_id);
+            errdefer allocator.free(id);
+            const user_id = try UUID.toStringAlloc(allocator, response.user_id);
+            errdefer allocator.free(user_id);
+            const media_id = allocator.dupe(u8, response.media_id) catch return error.OutOfMemory;
+            errdefer allocator.free(media_id);
             responses.append(allocator, .{
-                .id = try UUID.toStringAlloc(allocator, response.id),
-                .user_id = try UUID.toStringAlloc(allocator, response.user_id),
-                .media_id = allocator.dupe(u8, response.media_id) catch return error.OutOfMemory,
+                .progress_id = id,
+                .user_id = user_id,
+                .media_id = media_id,
                 .status = response.status,
                 .created_at = response.created_at,
+                .progress_value = response.progress_value,
+                .completion_percentage = response.completion_percentage,
             }) catch return error.OutOfMemory;
         }
 
@@ -67,6 +225,141 @@ pub const GetAll = struct {
     const query_string = @embedFile("queries/get_all_progress.sql");
 };
 
+test "Model | Profile | Progress | GetAll" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | GetAll";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const progress_id = blk: {
+        const BookModel = @import("../../models.zig").Content.Books;
+        const media_id = media: {
+            const request = BookModel.Create.Request{
+                .title = test_name,
+                .user_id = setup.user.id,
+                .release_date = null,
+                .total_pages = null,
+                .description = null,
+            };
+            const response = try BookModel.Create.call(
+                allocator,
+                test_env.database_pool,
+                request,
+            );
+            allocator.free(response.title);
+
+            break :media response.id;
+        };
+        defer allocator.free(media_id);
+
+        const request: Create.Request = .{
+            .user_id = setup.user.id,
+            .media_id = media_id,
+            .status = .in_progress,
+            .progress_value = 0.13,
+            .progress_unit = .percentage,
+        };
+
+        const response = try Create.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+        break :blk response.id;
+    };
+    defer allocator.free(progress_id);
+
+    const request: GetAll.Request = .{
+        .user_id = setup.user.id,
+        .limit = 50,
+    };
+
+    const responses = try GetAll.call(
+        allocator,
+        .{ .database = test_env.database_pool },
+        request,
+    );
+    defer {
+        for (responses) |response| response.deinit(allocator);
+        allocator.free(responses);
+    }
+
+    try std.testing.expectEqual(1, responses.len);
+    try std.testing.expectEqualStrings(setup.user.id, responses[0].user_id);
+    try std.testing.expectEqualStrings(progress_id, responses[0].progress_id);
+}
+
+test "Model | Profile | Progress | GetAll | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | GetAll | Allocation Failures";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    {
+        const BookModel = @import("../../models.zig").Content.Books;
+        const media_id = media: {
+            const request = BookModel.Create.Request{
+                .title = test_name,
+                .user_id = setup.user.id,
+                .release_date = null,
+                .total_pages = null,
+                .description = null,
+            };
+            const response = try BookModel.Create.call(
+                allocator,
+                test_env.database_pool,
+                request,
+            );
+            allocator.free(response.title);
+
+            break :media response.id;
+        };
+        defer allocator.free(media_id);
+
+        const request: Create.Request = .{
+            .user_id = setup.user.id,
+            .media_id = media_id,
+            .status = .in_progress,
+            .progress_value = 0.13,
+            .progress_unit = .percentage,
+        };
+
+        const response = try Create.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+        response.deinit(allocator);
+    }
+
+    const request: GetAll.Request = .{
+        .user_id = setup.user.id,
+        .limit = 50,
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        allocator,
+        struct {
+            fn call(alloc: Allocator, conn: Connection, req: GetAll.Request) !void {
+                const responses = try GetAll.call(alloc, conn, req);
+                defer {
+                    for (responses) |response| response.deinit(allocator);
+                    allocator.free(responses);
+                }
+            }
+        }.call,
+        .{
+            Connection{ .database = test_env.database_pool },
+            request,
+        },
+    );
+}
+
+// TODO: test
 pub const GetAllStatus = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -98,9 +391,9 @@ pub const GetAllStatus = struct {
         CannotParseID,
     } || DatabaseErrors;
 
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors![]Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
         const error_handler = ErrorHandler{ .conn = conn };
         var query = conn.queryOpts(
             query_string,
@@ -145,6 +438,7 @@ pub const GetAllStatus = struct {
     const query_string = @embedFile("queries/get_all_status.sql");
 };
 
+// TODO: test
 /// Turns a letterboxd list into a progress entry.
 /// Tries to match by [name,year] but if year is null, tries to match name only
 pub const ImportLetterboxd = struct {

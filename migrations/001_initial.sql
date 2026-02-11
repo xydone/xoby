@@ -221,7 +221,7 @@ CREATE INDEX idx_progress_latest ON profiles.progress (user_id, media_id, create
 
 -- +goose StatementBegin
 -- because progress can have different types, we use this view to normalize things
-CREATE OR REPLACE VIEW profiles.progress_summary AS
+CREATE VIEW profiles.progress_summary AS
 SELECT 
     p.id AS progress_id,
     p.user_id,

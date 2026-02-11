@@ -37,7 +37,11 @@ const GetAllProgress = Endpoint(struct {
             .limit = 50,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| {
             log.err("Get All Progress Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -75,7 +79,11 @@ const GetInProgress = Endpoint(struct {
             .status = .in_progress,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| {
             log.err("Get In Progress Progress Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
