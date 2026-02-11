@@ -779,10 +779,10 @@ const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").G
 const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
 
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;
-const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
-const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
-const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
-const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
+const CreateMultipleGenres = @import("../../models/content/content.zig").Media.CreateMultipleGenres;
+const CreateMultiplePeople = @import("../../models/content/content.zig").Media.CreateMultiplePeople;
+const CreateMultipleMediaStaff = @import("../../models/content/content.zig").Media.CreateMultipleMediaStaff;
+const CreateMultipleImages = @import("../../models/content/content.zig").Media.CreateMultipleImages;
 
 const Manager = @import("../fetchers.zig").Manager;
 

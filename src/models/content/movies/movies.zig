@@ -140,18 +140,18 @@ pub const CreateMultiple = struct {
     const query_string = @embedFile("queries/create_multiple_movies.sql");
 };
 
-const Tests = @import("../../tests/setup.zig");
+const Tests = @import("../../../tests/setup.zig");
 const TestSetup = Tests.TestSetup;
 
-const Pool = @import("../../database.zig").Pool;
-const Connection = @import("../../database.zig").Connection;
-const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
-const ErrorHandler = @import("../../database.zig").ErrorHandler;
+const Pool = @import("../../../database.zig").Pool;
+const Connection = @import("../../../database.zig").Connection;
+const DatabaseErrors = @import("../../../database.zig").DatabaseErrors;
+const ErrorHandler = @import("../../../database.zig").ErrorHandler;
 
-const Handler = @import("../../handler.zig");
+const Handler = @import("../../../handler.zig");
 
-const UUID = @import("../../util/uuid.zig");
-const JWTClaims = @import("../../auth/tokens.zig").JWTClaims;
+const UUID = @import("../../../util/uuid.zig");
+const JWTClaims = @import("../../../auth/tokens.zig").JWTClaims;
 
 const Allocator = std.mem.Allocator;
 const std = @import("std");

@@ -65,14 +65,14 @@ pub const Create = struct {
     ;
 };
 
-const Pool = @import("../../database.zig").Pool;
-const DatabaseErrors = @import("../../database.zig").DatabaseErrors;
-const ErrorHandler = @import("../../database.zig").ErrorHandler;
+const Pool = @import("../../../database.zig").Pool;
+const DatabaseErrors = @import("../../../database.zig").DatabaseErrors;
+const ErrorHandler = @import("../../../database.zig").ErrorHandler;
 
-const Handler = @import("../../handler.zig");
+const Handler = @import("../../../handler.zig");
 
-const UUID = @import("../../util/uuid.zig");
-const JWTClaims = @import("../../auth/tokens.zig").JWTClaims;
+const UUID = @import("../../../util/uuid.zig");
+const JWTClaims = @import("../../../auth/tokens.zig").JWTClaims;
 
 const Allocator = std.mem.Allocator;
 const std = @import("std");

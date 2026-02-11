@@ -165,8 +165,8 @@ const ErrorHandler = @import("../../../database.zig").ErrorHandler;
 const Tests = @import("../../../tests/setup.zig");
 const TestSetup = Tests.TestSetup;
 
-const ProgressStatus = @import("../../content/media.zig").ProgressStatus;
-const ProgressUnit = @import("../../content/media.zig").ProgressUnit;
+const ProgressStatus = @import("../../content/content.zig").Media.ProgressStatus;
+const ProgressUnit = @import("../../content/content.zig").Media.ProgressUnit;
 
 const UUID = @import("../../../util/uuid.zig");
 

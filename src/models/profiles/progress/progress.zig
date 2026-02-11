@@ -359,7 +359,6 @@ test "Model | Profile | Progress | GetAll | Allocation Failures" {
     );
 }
 
-// TODO: test
 pub const GetAllStatus = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -438,7 +437,158 @@ pub const GetAllStatus = struct {
     const query_string = @embedFile("queries/get_all_status.sql");
 };
 
-// TODO: test
+test "Model | Profile | Progress | GetAllStatus" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | GetAllStatus";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const progress_id = blk: {
+        const BookModel = @import("../../models.zig").Content.Books;
+        const media_id = media: {
+            const request = BookModel.Create.Request{
+                .title = test_name,
+                .user_id = setup.user.id,
+                .release_date = null,
+                .total_pages = null,
+                .description = null,
+            };
+            const response = try BookModel.Create.call(
+                allocator,
+                test_env.database_pool,
+                request,
+            );
+            allocator.free(response.title);
+
+            break :media response.id;
+        };
+        defer allocator.free(media_id);
+
+        const request: Create.Request = .{
+            .user_id = setup.user.id,
+            .media_id = media_id,
+            .status = .in_progress,
+            .progress_value = 0.13,
+            .progress_unit = .percentage,
+        };
+
+        const response = try Create.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+
+        const second_request: Create.Request = .{
+            .user_id = setup.user.id,
+            .media_id = media_id,
+            .status = .completed,
+            .progress_value = 1,
+            .progress_unit = .percentage,
+        };
+
+        const second_response = try Create.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            second_request,
+        );
+
+        break :blk &.{ response.id, second_response.id };
+    };
+    defer {
+        allocator.free(progress_id.@"0");
+        allocator.free(progress_id.@"1");
+    }
+
+    const request: GetAllStatus.Request = .{
+        .user_id = setup.user.id,
+        .status = .completed,
+    };
+
+    const responses = try GetAllStatus.call(
+        allocator,
+        .{ .database = test_env.database_pool },
+        request,
+    );
+    defer {
+        for (responses) |response| response.deinit(allocator);
+        allocator.free(responses);
+    }
+
+    try std.testing.expectEqual(1, responses.len);
+    try std.testing.expectEqualStrings(progress_id.@"1", responses[0].progress_id);
+}
+
+test "Model | Profile | Progress | GetAllStatus | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | GetAllStatus | Allocation Failures";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const progress_id = blk: {
+        const BookModel = @import("../../models.zig").Content.Books;
+        const media_id = media: {
+            const request = BookModel.Create.Request{
+                .title = test_name,
+                .user_id = setup.user.id,
+                .release_date = null,
+                .total_pages = null,
+                .description = null,
+            };
+            const response = try BookModel.Create.call(
+                allocator,
+                test_env.database_pool,
+                request,
+            );
+            allocator.free(response.title);
+
+            break :media response.id;
+        };
+        defer allocator.free(media_id);
+
+        const request: Create.Request = .{
+            .user_id = setup.user.id,
+            .media_id = media_id,
+            .status = .in_progress,
+            .progress_value = 0.13,
+            .progress_unit = .percentage,
+        };
+
+        const response = try Create.call(
+            allocator,
+            .{ .database = test_env.database_pool },
+            request,
+        );
+
+        break :blk response.id;
+    };
+    defer allocator.free(progress_id);
+
+    const request: GetAllStatus.Request = .{
+        .user_id = setup.user.id,
+        .status = .completed,
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        allocator,
+        struct {
+            fn call(alloc: Allocator, conn: Connection, req: GetAllStatus.Request) !void {
+                const responses = try GetAllStatus.call(alloc, conn, req);
+
+                for (responses) |response| response.deinit(allocator);
+                allocator.free(responses);
+            }
+        }.call,
+        .{
+            Connection{ .database = test_env.database_pool },
+            request,
+        },
+    );
+}
+
 /// Turns a letterboxd list into a progress entry.
 /// Tries to match by [name,year] but if year is null, tries to match name only
 pub const ImportLetterboxd = struct {
@@ -469,6 +619,7 @@ pub const ImportLetterboxd = struct {
         CannotParseID,
     } || DatabaseErrors;
 
+    const log = std.log.scoped(.progress_importletterboxd_model);
     pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors![]Response {
         assertAllSameLength(request, .{ "titles", "years", "created_at" });
         var conn = try connection.acquire();
@@ -493,20 +644,27 @@ pub const ImportLetterboxd = struct {
             if (error_data) |data| {
                 ErrorHandler.printErr(data);
             }
+            log.debug("query failed! {}", .{err});
             return error.CannotCreate;
         };
         defer query.deinit();
 
         var responses: std.ArrayList(Response) = .empty;
         defer responses.deinit(allocator);
+        errdefer for (responses.items) |response| response.deinit(allocator);
 
         var mapper = query.mapper(Response, .{});
 
         while (mapper.next() catch return error.CannotCreate) |response| {
+            const title = allocator.dupe(u8, response.title) catch return error.OutOfMemory;
+            errdefer allocator.free(title);
+            const reason = allocator.dupe(u8, response.reason) catch return error.OutOfMemory;
+            errdefer allocator.free(reason);
+
             responses.append(allocator, .{
-                .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
+                .title = title,
                 .release_year = response.release_year,
-                .reason = allocator.dupe(u8, response.reason) catch return error.OutOfMemory,
+                .reason = reason,
             }) catch return error.OutOfMemory;
         }
 
@@ -515,6 +673,111 @@ pub const ImportLetterboxd = struct {
 
     const query_string = @embedFile("queries/import_letterboxd_progress.sql");
 };
+
+test "Model | Profile | Progress | ImportLetterboxd" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | ImportLetterboxd";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const count = 10;
+    var titles = try allocator.alloc([]const u8, count);
+    var years = try allocator.alloc(?i64, count);
+    var uris = try allocator.alloc([]const u8, count);
+    var created_at = try allocator.alloc([]const u8, count);
+    defer {
+        for (titles) |title| allocator.free(title);
+        for (uris) |uri| allocator.free(uri);
+        allocator.free(titles);
+        allocator.free(years);
+        allocator.free(uris);
+        allocator.free(created_at);
+    }
+
+    for (0..count) |i| {
+        titles[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d}", .{ test_name, i });
+        years[i] = 2000 + @as(u32, @intCast(i));
+        uris[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d} 's uri", .{ test_name, i });
+        // TODO: test this too
+        created_at[i] = "01-01-2000";
+    }
+
+    const request: ImportLetterboxd.Request = .{
+        .user_id = setup.user.id,
+        .status = .completed,
+        .titles = titles,
+        .created_at = created_at,
+        .uris = uris,
+        .years = years,
+    };
+
+    const responses = try ImportLetterboxd.call(
+        allocator,
+        .{ .database = test_env.database_pool },
+        request,
+    );
+    defer {
+        for (responses) |response| response.deinit(allocator);
+        allocator.free(responses);
+    }
+}
+
+test "Model | Profile | Progress | ImportLetterboxd | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Profile | Progress | ImportLetterboxd | Allocation Failures";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+
+    const count = 10;
+    var titles = try allocator.alloc([]const u8, count);
+    var years = try allocator.alloc(?i64, count);
+    var uris = try allocator.alloc([]const u8, count);
+    var created_at = try allocator.alloc([]const u8, count);
+    defer {
+        for (titles) |title| allocator.free(title);
+        for (uris) |uri| allocator.free(uri);
+        allocator.free(titles);
+        allocator.free(years);
+        allocator.free(uris);
+        allocator.free(created_at);
+    }
+
+    for (0..count) |i| {
+        titles[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d}", .{ test_name, i });
+        years[i] = 2000 + @as(u32, @intCast(i));
+        uris[i] = try std.fmt.allocPrint(allocator, "{s} | Movie {d} 's uri", .{ test_name, i });
+        // TODO: test this too
+        created_at[i] = "01-01-2000";
+    }
+
+    const request: ImportLetterboxd.Request = .{
+        .user_id = setup.user.id,
+        .status = .completed,
+        .titles = titles,
+        .created_at = created_at,
+        .uris = uris,
+        .years = years,
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        allocator,
+        struct {
+            fn call(alloc: Allocator, conn: Connection, req: ImportLetterboxd.Request) !void {
+                const responses = try ImportLetterboxd.call(alloc, conn, req);
+                for (responses) |response| response.deinit(allocator);
+                allocator.free(responses);
+            }
+        }.call,
+        .{
+            Connection{ .database = test_env.database_pool },
+            request,
+        },
+    );
+}
 
 const assertAllSameLength = @import("../../../util/assertSameLength.zig").assertAllSameLength;
 const Connection = @import("../../../database.zig").Connection;
@@ -525,8 +788,8 @@ const ErrorHandler = @import("../../../database.zig").ErrorHandler;
 const Tests = @import("../../../tests/setup.zig");
 const TestSetup = Tests.TestSetup;
 
-const ProgressStatus = @import("../../content/media.zig").ProgressStatus;
-const ProgressUnit = @import("../../content/media.zig").ProgressUnit;
+const ProgressStatus = @import("../../content/content.zig").Media.ProgressStatus;
+const ProgressUnit = @import("../../content/content.zig").Media.ProgressUnit;
 
 const UUID = @import("../../../util/uuid.zig");
 

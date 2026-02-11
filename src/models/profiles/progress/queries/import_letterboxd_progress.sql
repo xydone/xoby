@@ -50,9 +50,9 @@ WITH
     SELECT
       $5,
       media_id,
-      $6,
-      COALESCE(c_at, CURRENT_TIMESTAMP)
-      CASE WHEN $6 = 'completed' THEN 1.0 ELSE 0.0 END,
+      $6::profiles.progress_status,
+      COALESCE(c_at, CURRENT_TIMESTAMP),
+      CASE WHEN $6::profiles.progress_status = 'completed' THEN 1.0 ELSE 0.0 END,
       'percentage'::profiles.progress_unit
     FROM
       match_analysis

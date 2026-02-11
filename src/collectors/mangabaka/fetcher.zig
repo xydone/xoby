@@ -420,10 +420,10 @@ pub const State = struct {
     }
 };
 
-const CreateMultipleImages = @import("../../models/content/content.zig").CreateMultipleImages;
-const CreateMultipleGenres = @import("../../models/content/content.zig").CreateMultipleGenres;
-const CreateMultiplePeople = @import("../../models/content/content.zig").CreateMultiplePeople;
-const CreateMultipleMediaStaff = @import("../../models/content/content.zig").CreateMultipleMediaStaff;
+const CreateMultipleImages = @import("../../models/content/content.zig").Media.CreateMultipleImages;
+const CreateMultipleGenres = @import("../../models/content/content.zig").Media.CreateMultipleGenres;
+const CreateMultiplePeople = @import("../../models/content/content.zig").Media.CreateMultiplePeople;
+const CreateMultipleMediaStaff = @import("../../models/content/content.zig").Media.CreateMultipleMediaStaff;
 const CreateMultipleManga = @import("../../models/content/manga/manga.zig").CreateMultiple;
 const Conn = @import("../../database.zig").Conn;
 const Database = @import("../../database.zig");
