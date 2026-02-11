@@ -4,11 +4,44 @@ const Endpoints = EndpointGroup(.{
     List.Endpoints,
     Ratings.Endpoints,
     Progress.Endpoints,
+
+    Summary,
     ImportLetterboxdWatchlist,
 });
 
 pub const endpoint_data = Endpoints.endpoint_data;
 pub const init = Endpoints.init;
+
+const Summary = Endpoint(struct {
+    const Response = Model.Response;
+    pub const endpoint_data: EndpointData = .{
+        .Request = .{},
+        .Response = Response,
+        .method = .GET,
+        .route_data = .{
+            .signed_in = true,
+        },
+        .path = "/api/profile/summary",
+    };
+
+    const Model = ProfileModel.Summary;
+    pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
+        const allocator = res.arena;
+
+        const request: Model.Request = .{
+            .user_id = ctx.user_id.?,
+        };
+
+        const response = try Model.call(
+            allocator,
+            ctx.database_pool,
+            request,
+        );
+
+        res.status = 200;
+        try res.json(response, .{});
+    }
+});
 
 const ImportLetterboxdWatchlist = Endpoint(struct {
     const Response = LetterboxdImporter.Import.Response;
