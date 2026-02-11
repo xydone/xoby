@@ -18,6 +18,7 @@ pub const Movies = @import("movies.zig");
 
 const log = std.log.scoped(.content_model);
 
+// TODO: test
 pub const CreateMultiplePeople = struct {
     pub const Request = struct {
         full_names: [][]const u8,
@@ -81,6 +82,7 @@ pub const CreateMultiplePeople = struct {
     const query_string = @embedFile("./queries/create_multiple_people.sql");
 };
 
+// TODO: test
 pub const CreateMultipleMediaStaff = struct {
     pub const Request = struct {
         person_ids: [][]const u8,
@@ -120,6 +122,7 @@ pub const CreateMultipleMediaStaff = struct {
     const query_string = @embedFile("./queries/create_multiple_media_staff.sql");
 };
 
+// TODO: test
 pub const CreateMultipleImages = struct {
     pub const Request = struct {
         media_ids: [][]const u8,
@@ -161,6 +164,7 @@ pub const CreateMultipleImages = struct {
     const query_string = @embedFile("./queries/create_multiple_images.sql");
 };
 
+// TODO: test
 pub const CreateMultipleGenres = struct {
     pub const Request = struct {
         media_ids: [][]const u8,

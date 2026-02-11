@@ -12,6 +12,7 @@ pub const ProgressUnit = enum {
     percentage,
 };
 
+// TODO: test
 pub const GetInformation = struct {
     pub const Request = struct {
         media_id: []const u8,
@@ -143,6 +144,7 @@ pub const GetInformation = struct {
     ;
 };
 
+// TODO: test
 pub const Search = struct {
     pub const Request = struct {
         search: []const u8,
@@ -202,6 +204,7 @@ pub const Search = struct {
     const query_string = @embedFile("queries/search_media.sql");
 };
 
+// TODO: test
 pub const CreateRating = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -258,6 +261,7 @@ pub const CreateRating = struct {
     ;
 };
 
+// TODO: test
 pub const GetRating = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -333,6 +337,7 @@ pub const GetRating = struct {
     ;
 };
 
+// TODO: test
 pub const EditRating = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -411,6 +416,7 @@ pub const EditRating = struct {
     ;
 };
 
+// TODO: test
 pub const CreateProgress = struct {
     pub const Request = struct {
         user_id: []const u8,
@@ -480,6 +486,7 @@ pub const CreateProgress = struct {
     const query_string = @embedFile("queries/create_progress.sql");
 };
 
+// TODO: test
 pub const GetProgress = struct {
     pub const Request = struct {
         user_id: []const u8,

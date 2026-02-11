@@ -1,4 +1,5 @@
 const log = std.log.scoped(.movies_model);
+// TODO: test
 pub const Create = struct {
     pub const Request = struct {
         title: []const u8,
@@ -65,6 +66,7 @@ pub const Create = struct {
     ;
 };
 
+// TODO: test
 pub const CreateMultiple = struct {
     pub const Request = struct {
         titles: [][]const u8,

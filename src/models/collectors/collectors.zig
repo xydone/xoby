@@ -2,6 +2,7 @@ const log = std.log.scoped(.collectors_model);
 
 const Status = enum { completed, pending, todo };
 
+// TODO: test
 pub const Create = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -39,6 +40,7 @@ pub const Create = struct {
     const query_string = @embedFile("queries/create_many.sql");
 };
 
+// TODO: test
 pub const GetNotCompleted = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -98,6 +100,7 @@ pub const GetNotCompleted = struct {
     const query_string = @embedFile("queries/get_not_completed.sql");
 };
 
+// TODO: test
 pub const GetNotCompletedCount = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -140,6 +143,7 @@ pub const GetNotCompletedCount = struct {
     const query_string = @embedFile("queries/get_not_completed_count.sql");
 };
 
+// TODO: test
 pub const EditStatus = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -186,6 +190,7 @@ pub const EditStatus = struct {
     ;
 };
 
+// TODO: test
 pub const GetDistribution = struct {
     pub const Distribution = struct {
         todo: i64,
