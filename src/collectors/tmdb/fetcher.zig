@@ -58,7 +58,7 @@ pub fn run(
         .n_jobs = AMOUNT_OF_THREADS,
     });
 
-    const total_amount = try GetNotCompletedCount.call(database, .{ .provider = "tmdb", .status = .todo });
+    const total_amount = try GetNotCompletedCount.call(.{ .database = database }, .{ .provider = "tmdb", .status = .todo });
 
     try manager.register(.tmdb, state);
 
@@ -98,7 +98,7 @@ const Fetch = struct {
 
             var handled_id_count: usize = 0;
             // the contents of id_list are allocated strings
-            const id_list = GetNotCompleted.call(request.state.allocator, request.state.database, not_completed_request) catch |err| {
+            const id_list = GetNotCompleted.call(request.state.allocator, .{ .database = request.state.database }, not_completed_request) catch |err| {
                 log.err("GetNotCompleted failed! {}", .{err});
                 return err;
             };
@@ -775,7 +775,7 @@ const HandlePool = @import("../fetchers.zig").HandlePool;
 const ImageType = @import("../../models/content/content.zig").ImageType;
 
 const GetNotCompleted = @import("../../models/collectors/collectors.zig").GetNotCompleted;
-const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").GetNotCompletedCount;
+const GetNotCompletedCount = @import("../../models/collectors/collectors.zig").GetStatusCount;
 const EditStatus = @import("../../models/collectors/collectors.zig").EditStatus;
 
 const CreateMultipleMovies = @import("../../models/content/content.zig").Movies.CreateMultiple;

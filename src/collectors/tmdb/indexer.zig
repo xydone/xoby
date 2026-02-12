@@ -78,7 +78,7 @@ pub fn call(allocator: Allocator, database: *Database, absolute_path: []const u8
             .media_type = .movie,
         };
 
-        Model.call(database, request) catch |err| {
+        Model.call(.{ .database = database }, request) catch |err| {
             log.err("create call failed! {}", .{err});
             return err;
         };

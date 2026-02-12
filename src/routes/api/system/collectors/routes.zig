@@ -160,7 +160,10 @@ const MediaStatusDistribution = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const distribution = GetDistribution.call(allocator, ctx.database_pool) catch |err| {
+        const distribution = GetDistribution.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+        ) catch |err| {
             log.err("GetDistribution failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
@@ -176,7 +179,7 @@ const MediaStatusDistribution = Endpoint(struct {
 
         try stringify.beginObject();
 
-        var it = distribution.iterator();
+        var it = distribution.map.iterator();
         while (it.next()) |entry| {
             try stringify.objectField(entry.key_ptr.*);
             try stringify.write(entry.value_ptr.*);
