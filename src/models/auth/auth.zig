@@ -309,13 +309,7 @@ pub const CreateAPIKey = struct {
             .api_key = api_key_response.full_key,
         };
     }
-    const query_string =
-        \\ INSERT INTO auth.api_keys (user_id, permissions, public_id, secret_hash)
-        \\ SELECT p.id, $2, $3, $4
-        \\ FROM auth.users p
-        \\ WHERE p.id = $1 
-        \\ AND p.role >= $2;
-    ;
+    const query_string = @embedFile("queries/create_api_key.sql");
 };
 
 pub const GetUserByAPIKey = struct {
@@ -374,11 +368,7 @@ pub const GetUserByAPIKey = struct {
             .permissions = response.permissions,
         };
     }
-    const query_string =
-        \\SELECT user_id, secret_hash,permissions 
-        \\FROM auth.api_keys
-        \\WHERE public_id = $1;
-    ;
+    const query_string = @embedFile("queries/get_user_by_api_key.sql");
 };
 
 test "Model | Auth | Create User" {
@@ -769,12 +759,7 @@ pub const EditUserRole = struct {
         };
     }
 
-    const query_string =
-        \\UPDATE auth.users 
-        \\SET role = $2
-        \\WHERE id = $1
-        \\RETURNING id, display_name, username, role
-    ;
+    const query_string = @embedFile("queries/edit_user_role.sql");
 };
 
 pub const HasAdmin = struct {

@@ -129,19 +129,7 @@ pub const GetInformation = struct {
         };
     }
 
-    const query_string =
-        \\ SELECT 
-        \\ m.id,
-        \\ m.title,
-        \\ m.media_type,
-        \\ m.release_date,
-        \\ mov.runtime_minutes,
-        \\ bk.total_pages
-        \\ FROM content.media_items m
-        \\ LEFT JOIN content.movies mov ON m.id = mov.media_id AND m.media_type = 'movie'
-        \\ LEFT JOIN content.books bk ON m.id = bk.media_id AND m.media_type = 'book'
-        \\ WHERE m.id = $1;
-    ;
+    const query_string = @embedFile("queries/get_media.sql");
 };
 
 // TODO: test
@@ -254,11 +242,7 @@ pub const CreateRating = struct {
         };
     }
 
-    const query_string =
-        \\ INSERT INTO profiles.ratings (user_id, media_id, rating_score)
-        \\ VALUES ($1, $2, $3)
-        \\ RETURNING id;
-    ;
+    const query_string = @embedFile("queries/create_rating.sql");
 };
 
 // TODO: test
@@ -330,11 +314,7 @@ pub const GetRating = struct {
         return responses.toOwnedSlice(allocator) catch return error.OutOfMemory;
     }
 
-    const query_string =
-        \\ SELECT id, rating_score, created_at
-        \\ FROM profiles.ratings
-        \\ WHERE user_id = $1 AND media_id = $2;
-    ;
+    const query_string = @embedFile("queries/get_rating.sql");
 };
 
 // TODO: test
@@ -406,14 +386,7 @@ pub const EditRating = struct {
         };
     }
 
-    const query_string =
-        \\ UPDATE profiles.ratings
-        \\ SET 
-        \\ rating_score = $3,
-        \\ created_at = now()
-        \\ WHERE id = $1 AND user_id = $2
-        \\ RETURNING *;
-    ;
+    const query_string = @embedFile("queries/edit_rating.sql");
 };
 
 // TODO: test

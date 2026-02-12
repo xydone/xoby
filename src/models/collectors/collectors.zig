@@ -179,15 +179,7 @@ pub const EditStatus = struct {
         } orelse return error.CannotUpdate;
     }
 
-    const query_string =
-        \\ UPDATE collectors.list
-        \\ SET 
-        \\ status = $3,
-        \\ updated_at = now()
-        \\ WHERE 
-        \\ provider = $1 
-        \\ AND external_id = ANY($2::text[]);
-    ;
+    const query_string = @embedFile("queries/edit_status.sql");
 };
 
 // TODO: test

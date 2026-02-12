@@ -73,11 +73,7 @@ pub const Get = struct {
         return responses.toOwnedSlice(allocator);
     }
 
-    const query_string =
-        \\ SELECT *
-        \\ FROM profiles.ratings
-        \\ WHERE user_id = $1;
-    ;
+    const query_string = @embedFile("queries/get_ratings.sql");
 };
 
 // TODO: test
