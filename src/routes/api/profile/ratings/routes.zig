@@ -28,13 +28,13 @@ const GetRatings = Endpoint(struct {
 
     pub fn call(ctx: *Handler.RequestContext, _: EndpointRequest(void, void, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-        const Model = ProfileModel.Ratings.Get;
+        const Model = ProfileModel.Ratings.GetAll;
 
         const request = Model.Request{
             .user_id = ctx.user_id.?,
         };
 
-        const responses = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const responses = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Get Ratings Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
