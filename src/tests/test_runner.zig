@@ -138,7 +138,7 @@ pub fn main() !void {
                 config.filter = filter;
             }
             if (std.mem.eql(u8, arg, "--skip-base-tests")) config.skip_base_tests = true;
-            if (std.mem.eql(u8, arg, "--run-allocation-failure-tests")) config.run_allocation_failure_tests = true;
+            if (std.mem.eql(u8, arg, "--allocation-failures")) config.run_allocation_failure_tests = true;
         }
     }
 
