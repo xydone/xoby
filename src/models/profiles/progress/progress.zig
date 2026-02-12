@@ -74,7 +74,7 @@ test "Model | Profile | Progress | Create" {
         };
         const response = try BookModel.Create.call(
             allocator,
-            test_env.database_pool,
+            .{ .database = test_env.database_pool },
             request,
         );
         allocator.free(response.title);
@@ -118,7 +118,7 @@ test "Model | Profile | Progress | Create | Allocation Failures" {
         };
         const response = try BookModel.Create.call(
             allocator,
-            test_env.database_pool,
+            .{ .database = test_env.database_pool },
             request,
         );
         allocator.free(response.title);
@@ -245,7 +245,7 @@ test "Model | Profile | Progress | GetAll" {
             };
             const response = try BookModel.Create.call(
                 allocator,
-                test_env.database_pool,
+                .{ .database = test_env.database_pool },
                 request,
             );
             allocator.free(response.title);
@@ -311,7 +311,7 @@ test "Model | Profile | Progress | GetAll | Allocation Failures" {
             };
             const response = try BookModel.Create.call(
                 allocator,
-                test_env.database_pool,
+                .{ .database = test_env.database_pool },
                 request,
             );
             allocator.free(response.title);
@@ -457,7 +457,7 @@ test "Model | Profile | Progress | GetAllStatus" {
             };
             const response = try BookModel.Create.call(
                 allocator,
-                test_env.database_pool,
+                .{ .database = test_env.database_pool },
                 request,
             );
             allocator.free(response.title);
@@ -540,7 +540,7 @@ test "Model | Profile | Progress | GetAllStatus | Allocation Failures" {
             };
             const response = try BookModel.Create.call(
                 allocator,
-                test_env.database_pool,
+                .{ .database = test_env.database_pool },
                 request,
             );
             allocator.free(response.title);

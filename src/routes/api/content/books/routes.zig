@@ -45,7 +45,7 @@ const Create = Endpoint(struct {
             .description = req.body.description,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const response = Model.call(allocator, .{ .database = ctx.database_pool }, request) catch |err| {
             log.err("Create Book Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;
