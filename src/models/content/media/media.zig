@@ -12,7 +12,6 @@ pub const ProgressUnit = enum {
     percentage,
 };
 
-// TODO: test
 pub const GetInformation = struct {
     pub const Request = struct {
         media_id: []const u8,
@@ -68,9 +67,9 @@ pub const GetInformation = struct {
         CannotParseID,
     } || DatabaseErrors;
 
-    pub fn call(allocator: std.mem.Allocator, database: *Pool, request: Request) Errors!Response {
-        var conn = database.acquire() catch return error.CannotAcquireConnection;
-        defer conn.release();
+    pub fn call(allocator: std.mem.Allocator, connection: Connection, request: Request) Errors!Response {
+        var conn = try connection.acquire();
+        defer connection.release(conn);
         const error_handler = ErrorHandler{ .conn = conn };
         var row = conn.rowOpts(
             query_string,
@@ -100,14 +99,20 @@ pub const GetInformation = struct {
             total_pages: ?i32,
         };
 
-        const response = row.to(DatabaseResponse, .{ .allocator = allocator }) catch |err| {
+        const response = row.to(DatabaseResponse, .{}) catch |err| {
             log.err("Couldn't parse response! {}", .{err});
             return error.CannotGet;
         };
 
+        const id = try UUID.toStringAlloc(allocator, response.id);
+        errdefer allocator.free(id);
+
+        const title = allocator.dupe(u8, response.title) catch return error.OutOfMemory;
+        errdefer allocator.free(title);
+
         return Response{
-            .id = allocator.dupe(u8, response.id) catch return error.OutOfMemory,
-            .title = allocator.dupe(u8, response.title) catch return error.OutOfMemory,
+            .id = id,
+            .title = title,
             .media_type = response.media_type,
             .release_date = response.release_date,
             .data = switch (response.media_type) {
@@ -131,6 +136,84 @@ pub const GetInformation = struct {
 
     const query_string = @embedFile("queries/get_media.sql");
 };
+
+test "Model | Media | Get" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Media | Get";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+    const connection: Connection = .{ .database = test_env.database_pool };
+
+    const BookCreate = @import("../books/books.zig").Create;
+    const book_request: BookCreate.Request = .{
+        .title = test_name,
+        .user_id = setup.user.id,
+        .release_date = "01-01-2000",
+        .total_pages = 100,
+        .description = null,
+    };
+
+    const book_response = try BookCreate.call(
+        allocator,
+        connection,
+        book_request,
+    );
+    defer book_response.deinit(allocator);
+
+    const request: GetInformation.Request = .{
+        .media_id = book_response.id,
+    };
+
+    const response = try GetInformation.call(allocator, connection, request);
+    defer response.deinit(allocator);
+
+    try std.testing.expectEqualStrings(book_response.id, response.id);
+    try std.testing.expectEqual(GetInformation.MediaType.book, response.media_type);
+    try std.testing.expectEqualStrings(book_request.title, response.title);
+}
+
+test "Model | Media | Get | Allocation Failures" {
+    const allocator = std.testing.allocator;
+
+    const test_env = Tests.test_env;
+    const test_name = "Model | Media | Get | Allocation Failures";
+    var setup = try TestSetup.init(test_env.database_pool, test_name);
+    defer setup.deinit(allocator);
+    const connection: Connection = .{ .database = test_env.database_pool };
+
+    const BookCreate = @import("../books/books.zig").Create;
+    const book_request: BookCreate.Request = .{
+        .title = test_name,
+        .user_id = setup.user.id,
+        .release_date = "01-01-2000",
+        .total_pages = 100,
+        .description = null,
+    };
+
+    const book_response = try BookCreate.call(
+        allocator,
+        connection,
+        book_request,
+    );
+    defer book_response.deinit(allocator);
+
+    const request: GetInformation.Request = .{
+        .media_id = book_response.id,
+    };
+
+    try std.testing.checkAllAllocationFailures(
+        allocator,
+        struct {
+            fn call(alloc: Allocator, conn: Connection, req: GetInformation.Request) !void {
+                const response = try GetInformation.call(alloc, conn, req);
+                response.deinit(allocator);
+            }
+        }.call,
+        .{ connection, request },
+    );
+}
 
 // TODO: test
 pub const Search = struct {
@@ -704,6 +787,9 @@ const Connection = @import("../../../database.zig").Connection;
 const Pool = @import("../../../database.zig").Pool;
 const DatabaseErrors = @import("../../../database.zig").DatabaseErrors;
 const ErrorHandler = @import("../../../database.zig").ErrorHandler;
+
+const Tests = @import("../../../tests/setup.zig");
+const TestSetup = Tests.TestSetup;
 
 const UUID = @import("../../../util/uuid.zig");
 const JWTClaims = @import("../../../auth/tokens.zig").JWTClaims;

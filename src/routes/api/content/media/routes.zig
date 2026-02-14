@@ -39,7 +39,11 @@ const GetInformation = Endpoint(struct {
             .media_id = req.params.id,
         };
 
-        const response = Model.call(allocator, ctx.database_pool, request) catch |err| {
+        const response = Model.call(
+            allocator,
+            .{ .database = ctx.database_pool },
+            request,
+        ) catch |err| {
             log.err("Model failed! {}", .{err});
             handleResponse(res, .internal_server_error, null);
             return;

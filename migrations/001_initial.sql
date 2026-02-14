@@ -77,7 +77,7 @@ CREATE TABLE
     user_id uuid REFERENCES auth.users (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
-    release_date DATE,
+    release_date TIMESTAMP,
     media_type content.media_type NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
 

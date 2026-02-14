@@ -334,7 +334,6 @@ test "Model | Collectors | GetStatusCount" {
     try std.testing.expectEqual(1, not_completed);
 }
 
-// TODO: test
 pub const EditStatus = struct {
     pub const Request = struct {
         provider: []const u8,
@@ -423,7 +422,6 @@ test "Model | Collectors | EditStatus" {
     try EditStatus.call(.{ .database = test_env.database_pool }, request);
 }
 
-// TODO: test
 pub const GetDistribution = struct {
     pub const Distribution = struct {
         todo: i64,
