@@ -279,7 +279,7 @@ const Request = struct {
         const release_date = try request.state.allocator.dupe(u8, response.release_date);
         errdefer request.state.allocator.free(release_date);
 
-        const runtime_minute: ?i64 = if (response.runtime == 0) null else @intCast(response.runtime);
+        const runtime_minute: ?i32 = if (response.runtime == 0) null else @intCast(response.runtime);
 
         const description = try request.state.allocator.dupe(u8, response.overview);
         errdefer request.state.allocator.free(description);
@@ -321,6 +321,17 @@ const Request = struct {
     }
 
     fn insertImages(request: Req, response: MovieIDResponse) !void {
+        primary_poster: {
+            const poster_path = response.poster_path orelse break :primary_poster;
+            try request.state.image_list.append(request.state.allocator, .{
+                .path = try request.state.allocator.dupe(u8, poster_path),
+                .image_type = .poster,
+                .provider = "tmdb",
+                .media_id = request.id,
+                .is_primary = true,
+            });
+        }
+
         inline for (@typeInfo(MovieIDResponse.Images.ImageType).@"enum".fields) |field| {
             for (@field(response.images, field.name)) |img| {
                 const image: MovieIDResponse.Images.Image = img;
@@ -577,6 +588,7 @@ const MovieIDResponse = struct {
     release_date: []const u8,
     runtime: i64,
     title: []const u8,
+    poster_path: ?[]const u8,
     credits: Credits,
     images: Images,
 
@@ -624,7 +636,7 @@ const DatabaseRepresentation = struct {
         id: []const u8,
         title: []const u8,
         release_date: []const u8,
-        runtime_minutes: ?i64,
+        runtime_minutes: ?i32,
         description: ?[]const u8,
         provider: []const u8,
 

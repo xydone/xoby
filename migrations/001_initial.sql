@@ -168,7 +168,7 @@ CREATE TABLE
 INSERT INTO
   content.image_providers (name, is_external)
 VALUES
-  ('local', false),
+  ('xoby', false),
   ('tmdb', true),
   ('anilist', true);
 

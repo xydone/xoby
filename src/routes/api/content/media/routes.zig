@@ -23,7 +23,7 @@ const GetInformation = Endpoint(struct {
             .Params = Params,
         },
         .Response = Response,
-        .method = .POST,
+        .method = .GET,
         .route_data = .{
             .signed_in = true,
         },
@@ -34,10 +34,12 @@ const GetInformation = Endpoint(struct {
     const log = std.log.scoped(.get_media_information);
     pub fn call(ctx: *Handler.RequestContext, req: EndpointRequest(void, Params, void), res: *httpz.Response) anyerror!void {
         const allocator = res.arena;
-
         const request = Model.Request{
             .media_id = req.params.id,
+            // TODO: what if the user does not want to use this host to handle images?
+            .xoby_image_path = try std.fmt.allocPrint(allocator, "http://{s}:{}", .{ ctx.config.address, ctx.config.port }),
         };
+        defer allocator.free(request.xoby_image_path);
 
         const response = Model.call(
             allocator,

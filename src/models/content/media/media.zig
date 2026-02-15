@@ -12,9 +12,12 @@ pub const ProgressUnit = enum {
     percentage,
 };
 
+pub const ImageProvider = enum { xoby, tmdb, anilist };
+
 pub const GetInformation = struct {
     pub const Request = struct {
         media_id: []const u8,
+        xoby_image_path: []const u8,
     };
 
     pub const MediaType = enum { movie, book };
@@ -28,10 +31,22 @@ pub const GetInformation = struct {
             movie: MovieData,
             book: BookData,
         },
+        primary_image_path: ?[]const u8,
+
+        pub fn deinit(self: Response, allocator: Allocator) void {
+            allocator.free(self.id);
+            allocator.free(self.title);
+            if (self.primary_image_path) |path| allocator.free(path);
+            switch (self.data) {
+                inline else => |data| {
+                    data.deinit(allocator);
+                },
+            }
+        }
 
         pub const MovieData = struct {
             // movie specific fields
-            runtime_minutes: ?i64,
+            runtime_minutes: ?i32,
 
             pub fn deinit(self: MovieData, allocator: Allocator) void {
                 _ = self;
@@ -48,16 +63,6 @@ pub const GetInformation = struct {
                 _ = allocator;
             }
         };
-
-        pub fn deinit(self: Response, allocator: Allocator) void {
-            allocator.free(self.id);
-            allocator.free(self.title);
-            switch (self.data) {
-                inline else => |data| {
-                    data.deinit(allocator);
-                },
-            }
-        }
     };
 
     pub const Errors = error{
@@ -93,8 +98,10 @@ pub const GetInformation = struct {
             title: []u8,
             media_type: MediaType,
             release_date: ?i64,
+            primary_image_path: ?[]const u8,
+            primary_image_provider: ?ImageProvider,
             // movie specific fields
-            runtime_minutes: ?i64,
+            runtime_minutes: ?i32,
             // book specific fields
             total_pages: ?i32,
         };
@@ -110,11 +117,28 @@ pub const GetInformation = struct {
         const title = allocator.dupe(u8, response.title) catch return error.OutOfMemory;
         errdefer allocator.free(title);
 
+        const primary_image: ?[]const u8 = primary_image_blk: {
+            const provider = response.primary_image_provider orelse break :primary_image_blk null;
+            const path = response.primary_image_path orelse {
+                log.debug("Provider was not null, but path was. ID: {s}", .{id});
+                break :primary_image_blk null;
+            };
+            break :primary_image_blk try std.fmt.allocPrint(allocator, "{s}{s}", .{
+                switch (provider) {
+                    .xoby => request.xoby_image_path,
+                    .anilist => "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large",
+                    .tmdb => "https://image.tmdb.org/t/p/w600_and_h900_face",
+                },
+                path,
+            });
+        };
+
         return Response{
             .id = id,
             .title = title,
             .media_type = response.media_type,
             .release_date = response.release_date,
+            .primary_image_path = primary_image,
             .data = switch (response.media_type) {
                 .movie => blk: {
                     break :blk .{
@@ -164,6 +188,7 @@ test "Model | Media | Get" {
 
     const request: GetInformation.Request = .{
         .media_id = book_response.id,
+        .xoby_image_path = test_name,
     };
 
     const response = try GetInformation.call(allocator, connection, request);
@@ -201,6 +226,7 @@ test "Model | Media | Get | Allocation Failures" {
 
     const request: GetInformation.Request = .{
         .media_id = book_response.id,
+        .xoby_image_path = test_name,
     };
 
     try std.testing.checkAllAllocationFailures(

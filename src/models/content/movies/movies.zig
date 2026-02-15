@@ -63,7 +63,7 @@ pub const CreateMultiple = struct {
         titles: [][]const u8,
         user_id: []const u8,
         release_dates: [][]const u8,
-        runtime_minutes: []?i64,
+        runtime_minutes: []?i32,
         descriptions: []?[]const u8,
         providers: [][]const u8,
         external_ids: [][]const u8,
